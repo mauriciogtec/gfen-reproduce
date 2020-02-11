@@ -1,0 +1,5 @@
+sbatch "C:\Users\mbg877\Google Drive\GFLRideAustin\spt_paper_reproducibility\bash_scripts\job-1.sh"
+sbatch "C:\Users\mbg877\Google Drive\GFLRideAustin\spt_paper_reproducibility\bash_scripts\job-2.sh"
+sbatch "C:\Users\mbg877\Google Drive\GFLRideAustin\spt_paper_reproducibility\bash_scripts\job-3.sh"
+sbatch "C:\Users\mbg877\Google Drive\GFLRideAustin\spt_paper_reproducibility\bash_scripts\job-4.sh"
+sbatch "C:\Users\mbg877\Google Drive\GFLRideAustin\spt_paper_reproducibility\bash_scripts\job-5.sh"
