@@ -1,4 +1,13 @@
 # set-up distributed environment
+using Pkg
+
+# first make sure all packages necessary are loaded
+workdir() = pwd()
+GFEN_relpath() = "GraphFusedElasticNet.jl/"
+Pkg.activate(joinpath(workdir(), GFEN_relpath()))
+Pkg.instantiate()
+
+
 using Distributed
 
 
@@ -33,22 +42,18 @@ end
 
 
 # instatiate and load libraries in every process
-using Pkg
-Pkg.activate(joinpath(workdir(), GFEN_relpath()))
-Pkg.instantiate()
 @everywhere begin
     using Pkg
     Pkg.activate(joinpath(workdir(), GFEN_relpath()))
-    # Pkg.instantiate()
     using JSON
     using DataFrames
     using Dates
+    using Distributions
     using Random
     using CSV
     using Base.Threads
     using DelimitedFiles
     using GraphFusedElasticNet
-    # include(joinpath(GFEN_relpath(), "src/GraphFusedElasticNet.jl"))
 end
 
 
@@ -140,6 +145,7 @@ end
     cv_logll = zeros(npars)
     thrdid = zeros(Int, npars)   
     avtime = zeros(npars)      
+    avalpha = zeros(npars)      
     # prepare the tree structure and the bint 
     Nobs = sum(y[:, 2])
     if !usethreads
@@ -154,6 +160,7 @@ end
                 end
                 beta = model.beta
                 avtime[k] += runningtime
+                avalpha[k] += model.admm_penalty
                 # compute the out-of-sample likelihood
                 ll = 0.0
                 for j in cvsets[i]
@@ -168,7 +175,7 @@ end
         @threads for k = 1:npars
             λ1, λ2, η1, η2 = pars[k]
             for i = 1:nsplits
-                thrdid = threadid()
+                thrdid[k] = threadid()
                 # get the cv vector with missing data
                 ytrain = get_train_data(y, cvsets[i])
                 runningtime = @elapsed begin
@@ -178,6 +185,7 @@ end
                 end
                 beta = model.beta
                 avtime[k] += runningtime   
+                avalpha[k] += model.admm_penalty
                 # compute the out-of-sample likelihood
                 ll = 0.0
                 for j in cvsets[i]
@@ -191,7 +199,8 @@ end
     end
     cv_logll /= Nobs
     avtime /= nsplits
-    cv_logll, thrdid, avtime
+    avalpha /= nsplits
+    cv_logll, thrdid, avtime, avalpha
 end
 
 
@@ -201,21 +210,25 @@ end
     ptr, brks, wts, istemp, num_nodes = loadtrails()
 
     # set up gaussian process with smoothing parameters
-    sl1 = [1e-6,  0.2, 0.4, 0.6, 0.8, 1.0, 1.25]
-    tl1 = [1e-6,  0.5, 1.0, 2.5, 5.0, 7.5, 10.0]
-    sl2 = [1e-6,  0.2, 0.4, 0.6, 0.8, 1.0, 1.25]
+    # (7 ^ 4) = 2401 parameter space size
+    # Kernel matrix is 2401 x 2401 (196,882 entries)
+    # for much larger spaces consider more efficient
+    # implementations of gaussian processes
+    sl1 = [1e-6,  0.25, 0.5, 0.75, 1.0, 1.5, 2.5]
+    sl2 = [1e-6,  0.5, 1.0, 2.5, 5.0, 7.5, 10.0]
+    tl1 = [1e-6,  0.25, 0.5, 0.75, 1.0, 1.5, 2.5]
     tl2 = [1e-6,  0.5, 1.0, 2.5, 5.0, 7.5, 10.0]
 
     hparams = hcat([[a, b, c, d]
                     for a in sl1
-                    for b in tl1
-                    for c in sl2
+                    for b in sl2
+                    for c in tl1
                     for d in tl2]...)
 
     nl = size(hparams, 2)
-    a, σ, b = 0.5, 0.0001, 1.0
-    gpsampler = GaussianProcessSampler(
-        hparams, zeros(nl), a=a, σ=σ, b=b)
+    a, σ, b = 0.5, 0.0001, 0.01^2
+    gpsampler = GaussianProcessSampler(hparams, a=a, σ=σ, b=b)
+    gp_offset = 0.0  # empirically assigned to running obs mean
 
     # model parameters
     modelopts = Dict{Symbol, Any}(
@@ -224,7 +237,8 @@ end
         :admm_residual_balancing => true,
         :admm_adaptive_inflation => true,
         :reltol => 1e-3,
-        :admm_min_penalty => 0.01,
+        :admm_min_penalty => 0.25,
+        :admm_max_penalty => 25.0,
         :abstol => 0.,
         :save_norms => true,
         :save_loss => true)
@@ -241,28 +255,34 @@ end
     results = []
     for gen in 1:ngens
         # sample lambdas from generation
-        if gen == 1 && gensize == 16
-            # evaluate first in all the corners !
-            idx = Int[]
-            a, b = minimum(sl1), minimum(tl1)
-            c, d = minimum(sl2), minimum(tl2)
-            A, B = maximum(sl1), maximum(tl1)
-            C, D = maximum(sl2), maximum(tl2)
-            for j in 1:nl
-                if (hparams[1, j] in [a, A] &&
-                    hparams[2, j] in [b, B] &&
-                    hparams[3, j] in [c, C] &&
-                    hparams[4, j] in [d, D])
-                    push!(idx, j)
+        if gen == 1
+            if gensize == 16
+                # evaluate first in all the corners !
+                idx = Int[]
+                a, b = minimum(sl1), minimum(sl2)
+                A, B = maximum(sl2), maximum(tl2)
+                c, d = minimum(tl1), minimum(tl2)
+                C, D = maximum(tl1), maximum(tl2)
+                for j in 1:nl
+                    if (hparams[1, j] in [a, A] &&
+                        hparams[2, j] in [b, B] &&
+                        hparams[3, j] in [c, C] &&
+                        hparams[4, j] in [d, D])
+                        push!(idx, j)
+                    end
                 end
+            else
+                idx = sample(1:nl, gensize, replace=false)
             end
+            prev_pred = fill(-Inf, gensize)
+            prev_sd = fill(-Inf, 0.0)
         else
-            idx, _, _  = gpsample(gpsampler, gensize)
+            idx, _, _, prev_pred, prev_sd  = gpsample(gpsampler, gensize)
         end
         pars = [hparams[:, i] for i in idx]
         slambdasl1 = hparams[1, idx]
-        tlambdasl1 = hparams[2, idx]
-        slambdasl2 = hparams[3, idx]
+        slambdasl2 = hparams[2, idx]
+        tlambdasl1 = hparams[3, idx]
         tlambdasl2 = hparams[4, idx]
 
         # run for every lambda in thread
@@ -273,35 +293,56 @@ end
 
         # obtain cv losses and update gaussian process
         usethreads = true
-        cv_logll, thrds, avtime = cv_eval(
+        cv_logll, thrds, avtime, avalpha = cv_eval(
             y, ptr, brks, wts, istemp,
             pars, cvsets,
             modelopts, fitopts, usethreads)
         addobs!(gpsampler, idx, cv_logll)
+        # update the offset helps with better estimates
+        # at far regions from observed data
+        # it's like using an empirical prior, it doesn't 
+        # affect much regions with densely observed data
+        N0, N1 = (gen - 1) * gensize, gen * gensize
+        gp_offset = (gp_offset *  N0 +  sum(cv_logll)) / N1
+        gpsampler.offset = gp_offset
 
         df = DataFrame(
             fn=fns, pid=pids, host=hosts, thread=thrds,
-            λsl1=slambdasl1, λtl1=tlambdasl1, λsl2=slambdasl2, λtl2=tlambdasl2,
-            cv_logll=cv_logll, time=avtime, gen=gens)
+            λsl1=slambdasl1, λsl2=slambdasl2, λtl1=tlambdasl1, λtl2=tlambdasl2,
+            cv_logll=cv_logll, time=avtime, alpha=avalpha, gen=gens,
+            paramid=idx, prev_pred=prev_pred, prev_sd=prev_sd)
         println(df)
         push!(results, df)
     end
 
     # now obtain the best hyperperameters and train the best model
     results = vcat(results...)
-    bestidx = argmax(results.cv_logll)
-    λ1 = results.λsl1[bestidx]
-    η1 = results.λtl1[bestidx]
-    λ2 = results.λsl2[bestidx]
-    η2 = results.λtl2[bestidx]
+    pred, band = gpeval(gpsampler)
+    results.final_pred = pred[results.paramid]
+    results.final_sd = band[results.paramid]
+    #
+    bestidx = argmax(results.final_pred)
+    best_predicted = results.final_pred[bestidx]
+    λ1, λ2, η1, η2 = hparams[:, results.paramid[bestidx]]
+
+    gpdf = DataFrame(
+        slambdasl1=hparams[1, :],
+        slambdasl2=hparams[2, :],
+        tlambdasl1=hparams[3, :],
+        tlambdasl2=hparams[4, :],
+        pred=pred,
+        band=band,
+        tested=gpsampler.tested)
      
     modelopts[:reltol] /= 10.0
     fitopts = Dict{Symbol, Any}(
-        :parallel => true,
-        :walltime => 2.0 * walltime)
-    model = fit_model(
-        y, ptr, brks, wts, istemp,
-        λ1, λ2, η1, η2, modelopts, fitopts)
+        :parallel => true,  
+        :walltime => 16.0 * walltime)
+    runtime_final = @elapsed begin
+        model = fit_model(
+            y, ptr, brks, wts, istemp,
+            λ1, λ2, η1, η2, modelopts, fitopts)
+    end
     betasfile = joinpath(
         workdir(),
         betas_relpath(),
@@ -309,25 +350,33 @@ end
     resultsfile = joinpath(
         workdir(),
         fitmetrics_relpath(),
-        "metrics_" * filename[6:end-4] * ".csv")
+        "cvloss_" * filename[6:end-4] * ".csv")
+    gpfile = joinpath(
+        workdir(),
+        fitmetrics_relpath(),
+        "gp_" * filename[6:end-4] * ".csv")
 
     # write results
-    println("...writing best model with params ", (λ1, η1, λ2, η2))
     CSV.write(resultsfile, results)
+    CSV.write(gpfile, gpdf)
     open(betasfile, "w") do f
         writedlm(f, model.beta, ',')
     end
     
-    dfbest = results[bestidx, :]
     println("Best model:")
-    println(dfbest) # for fun
+    println("   split:     ", filename)
+    println("   params:    ", (λ1, λ2, η1, η2))
+    println("   predicted: ", best_predicted)
+    println("   runtime:   ", runtime_final)
+    println("   generation:   ", results.gen[bestidx])
     steps = model.steps
     conv = model.converged
     t = "$(Dates.Time(Dates.now()))"[1:5]
     pnorm = model.prim_norms[end]
     dnorm = model.dual_norms[end]
     loss = model.loss[end]
-    println("steps=$steps, conv=$conv, t=$t, loss=$loss, pnorm=$pnorm, dnorm=$dnorm")
+    admm_penalty = model.admm_penalty
+    println("steps=$steps, conv=$conv, t=$t, loss=$loss, pnorm=$pnorm, dnorm=$dnorm, alpha=$admm_penalty")
 end
 
 
