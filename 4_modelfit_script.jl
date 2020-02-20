@@ -148,53 +148,28 @@ end
     avalpha = zeros(npars)      
     # prepare the tree structure and the bint 
     Nobs = sum(y[:, 2])
-    if !usethreads
-        for (k, (λ1, λ2, η1, η2)) in enumerate(pars)
-            for i in 1:nsplits
-                # get the cv vector with missing data
-                ytrain = get_train_data(y, cvsets[i])
-                runningtime = @elapsed begin
-                    model = fit_model(
-                        ytrain, ptr, brks, wts, istemp,
-                        λ1, λ2, η1, η2, modelopts, fitopts)  
-                end
-                beta = model.beta
-                avtime[k] += runningtime
-                avalpha[k] += model.admm_penalty
-                # compute the out-of-sample likelihood
-                ll = 0.0
-                for j in cvsets[i]
-                    s, N = y[j, :]
-                    ρ = sigmoid(beta[j])
-                    ll += s * log(ρ + 1e-12) + (N - s) * log(1.0 - ρ + 1e-12)
-                end
-                cv_logll[k] = ll 
+    @threads for k = 1:npars
+        λ1, λ2, η1, η2 = pars[k]
+        for i = 1:nsplits
+            thrdid[k] = threadid()
+            # get the cv vector with missing data
+            ytrain = get_train_data(y, cvsets[i])
+            runningtime = @elapsed begin
+                model = fit_model(
+                    ytrain, ptr, brks, wts, istemp,
+                    λ1, λ2, η1, η2, modelopts, fitopts)
             end
-        end
-    else
-        @threads for k = 1:npars
-            λ1, λ2, η1, η2 = pars[k]
-            for i = 1:nsplits
-                thrdid[k] = threadid()
-                # get the cv vector with missing data
-                ytrain = get_train_data(y, cvsets[i])
-                runningtime = @elapsed begin
-                    model = fit_model(
-                        ytrain, ptr, brks, wts, istemp,
-                        λ1, λ2, η1, η2, modelopts, fitopts)
-                end
-                beta = model.beta
-                avtime[k] += runningtime   
-                avalpha[k] += model.admm_penalty
-                # compute the out-of-sample likelihood
-                ll = 0.0
-                for j in cvsets[i]
-                    s, N = y[j, :]
-                    ρ = sigmoid(beta[j])
-                    ll += s * log(ρ + 1e-12) + (N - s) * log(1.0 - ρ + 1e-12)
-                end
-                cv_logll[k] = ll 
+            beta = model.beta
+            avtime[k] += runningtime   
+            avalpha[k] += model.admm_penalty
+            # compute the out-of-sample likelihood
+            ll = 0.0
+            for j in cvsets[i]
+                s, N = y[j, :]
+                ρ = sigmoid(beta[j])
+                ll += s * log(ρ + 1e-12) + (N - s) * log(1.0 - ρ + 1e-12)
             end
+            cv_logll[k] = ll 
         end
     end
     cv_logll /= Nobs
@@ -214,10 +189,10 @@ end
     # Kernel matrix is 2401 x 2401 (196,882 entries)
     # for much larger spaces consider more efficient
     # implementations of gaussian processes
-    sl1 = [1e-6,  0.25, 0.5, 0.75, 1.0, 1.5, 2.5]
-    sl2 = [1e-6,  0.5, 1.0, 2.5, 5.0, 7.5, 10.0]
-    tl1 = [1e-6,  0.25, 0.5, 0.75, 1.0, 1.5, 2.5]
-    tl2 = [1e-6,  0.5, 1.0, 2.5, 5.0, 7.5, 10.0]
+    sl1 = [1e-2,  0.25, 0.5, 0.75, 1.25, 2.5, 5.0]
+    sl2 = [1e-2,  0.5, 1.0, 2.5, 5.0, 10.0, 20.0]
+    tl1 = [1e-2,  0.25, 0.5, 0.75, 1.25, 2.5, 5.0]
+    tl2 = [1e-2,  0.5, 1.0, 2.5, 5.0, 10.0, 20.0]
 
     hparams = hcat([[a, b, c, d]
                     for a in sl1
@@ -226,19 +201,20 @@ end
                     for d in tl2]...)
 
     nl = size(hparams, 2)
-    a, σ, b = 0.5, 0.0001, 0.01^2
-    gpsampler = GaussianProcessSampler(hparams, a=a, σ=σ, b=b)
+    a, σ, b = 0.1, 0.00001, 0.0001^2
+    X = log.(hparams)
+    gpsampler = GaussianProcessSampler(X, a=a, σ=σ, b=b)
     gp_offset = 0.0  # empirically assigned to running obs mean
 
     # model parameters
     modelopts = Dict{Symbol, Any}(
         :admm_balance_every => 10,
-        :admm_init_penalty => 5.0,
+        :admm_init_penalty => 0.1,
         :admm_residual_balancing => true,
         :admm_adaptive_inflation => true,
         :reltol => 1e-3,
-        :admm_min_penalty => 0.25,
-        :admm_max_penalty => 25.0,
+        :admm_min_penalty => 0.1,
+        :admm_max_penalty => 5.0,
         :abstol => 0.,
         :save_norms => true,
         :save_loss => true)
@@ -275,7 +251,7 @@ end
                 idx = sample(1:nl, gensize, replace=false)
             end
             prev_pred = fill(-Inf, gensize)
-            prev_sd = fill(-Inf, 0.0)
+            prev_sd = fill(0.0, gensize)
         else
             idx, _, _, prev_pred, prev_sd  = gpsample(gpsampler, gensize)
         end

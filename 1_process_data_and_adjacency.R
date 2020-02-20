@@ -100,7 +100,15 @@ split_time <- function(time) {
   h <- lubridate::hour(time)
   24 * (w - 1) + h + 1
 }
+split_time_label <- function(time) {
+  wdaynames = c("Sun", "Mon", "Tue",
+            "Wed", "Thu", "Fri", "Sat")
+  w = wdaynames[lubridate::wday(time)]
+  h = sprintf("%02d:00", lubridate::hour(time))
+  paste(w, h)
+}
 data$timebin <- split_time(data$completed_on)
+data$timelabel <- split_time_label(data$completed_on)
 
 # define a column to indicate the spatio-temporal bin
 data$node <- paste(data$end_taz, data$timebin, sep="-")

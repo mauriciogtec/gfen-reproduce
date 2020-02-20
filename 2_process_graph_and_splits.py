@@ -2,6 +2,8 @@
 import numpy as np
 import pandas as pd
 import networkx as nx
+from collections import Counter
+
 
 #%%
 fname = "./processed_data/rideaustin_productivity.csv"
@@ -69,13 +71,29 @@ g = nx.Graph()
 g.add_edges_from(links)
 # nx.number_connected_components(g) # should be one!
 
+
 # %% vertex info
-nodes = list(g.nodes())
-node2vertex = {x: i for i, x in enumerate(nodes)}
-df = pd.DataFrame({'nodes': nodes})
+node = list(g.nodes())
+node2vertex = {x: i for i, x in enumerate(node)}
+df = pd.DataFrame({'node': node})
 df['vertex'] = [node2vertex[node] for node in nodes]
 df['taz'] = [int(node.split("-")[0]) for node in nodes]
 df['hour'] = [int(node.split("-")[1]) for node in nodes]
+
+# function for time labels
+def timelabeller(hour):
+    w = (hour - 1) // 24
+    t = (hour - 1) % 24
+    wdays = ["Sun", "Mon", "Tue",
+             "Wed", "Thu", "Fri", "Sat"]
+    return f"{wdays[w]} {t:02d}:00"
+df['timelabel'] = df.hour.apply(timelabeller)
+
+# counter number of nodes
+cnts = Counter(data.node)
+df['node_counts'] = df.node.apply(lambda x: cnts[x])
+
+# save file
 fname = './processed_data/vertex_data.csv'
 df.to_csv(fname, index=False)
 print(f"...saved vertex info in {fname}")
