@@ -1,0 +1,6 @@
+[submodule "GraphFusedElasticnet.jl"]
+	path = GraphFusedElasticnet.jl
+	url = https://github.com/mauriciogtec/GraphFusedElasticnet.jl
+[submodule "gfen-shinyapp"]
+	path = gfen-shinyapp
+	url = https://github.com/mauriciogtec/gfen-shinyapp
