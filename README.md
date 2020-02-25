@@ -23,16 +23,14 @@ To perform spatiotemporal smoothing we need a spatiotemporal graph that contains
 
 ### Julia Package Installation
 
-All the algorithms to run the GFEN are available in our Julia package `GraphFusedElasticNet.jl`. To install the package permanently you can use the following command in the Julia REPL:
+All the algorithms to run the GFEN are available in our Julia package `GraphFusedElasticNet.jl`. To install the package from the Internet you can use the following command in the Julia REPL:
 
 ```julia
 using Pkg
 Pkg.add("https://github.com/mauriciogtec/GraphFusedElasticNet.jl")
 ```
 
-In the future, after we test it in a few other problems, we will upload these package as an official Julia package. 
-
-As an alternative to direct installing the package in the system, the package can be loaded directly from the source code. Our Julia package is registered as a git submodule of this Github repository. To clone the repository and activate the submodule one must execute the following command when cloning from this repo:
+In the future, after we test it in a few other problems, we will register this package as an official Julia package. As an alternative to direct installation from the Internet into the base system, the package can be loaded directly from the local source code. More specifically, the package is configured as a git submodule of this Github repository. To clone the repository with the submodule activated one must execute the following command when cloning this repo:
 
 ```bash
 git clone --recurse-submodules https://github.com/mauriciogtec/gfen-reproduce
@@ -50,7 +48,7 @@ Pkg.activate("./GraphFusedElasticNet.jl/")
 Pkg.instantiate()
 ```
 
-This will create a local environment to run the code that guarantees the right dependencies. Remove these lines if you want to install the code in the base machine environment.
+This will create a local environment to run the code that guarantees the right dependencies. Remove these lines if you want to run the scripts from a package installation from the Internet.
 
 
 ### Trails
@@ -61,7 +59,26 @@ For our scalable algorithm we need to decompose the graph into trails. These tra
 
 ### Model fit with Bayesian Optimization
 
-The file `4_modelfit_script.jl` executes a Graph Fused Elastic-Net Binomial model at each split level. Each time it is executed it will produce a file with model fit metrics such as cross-validation error and the fitted Gaussian process for the hyper-parameters at the folder `modelfit_metrics`. It will use the best hyper-parameters to fit a model and the output is stored at `best_betas`.
+The file `4_modelfit_script.jl` executes a Graph Fused Elastic-Net Binomial model at each split level. Each time it is executed it will produce a file with model fit metrics such as cross-validation error and the fitted Gaussian process for the hyper-parameters at the folder `modelfit_metrics`. It will use the best hyper-parameters to fit a model and the output is stored at `best_betas`. These betas are log-odds and there's exactly one for each split. Each split can be optimized in parallel. Once the optimization for every split is completed, the script `6_densities_from_fitted_bettas.jl` can be used to compute the actual probabilities associated to each bin of the tree. The result will be a matrix of size `M x V` where `M` is the number of bins (determined by the number of splits) and `V` is the number of vertices in the graph. The output is stored at `output_smooth_probs/`. This script has the option of storing the results into chunks, due to the size of the matrix.
+
+
+We design our scripts having a cluster environment in mind. The ideas is that we can use multiple levels of parallelism. For example, to fit 32 scripts we can divide them into 8 jobs, each one running at a different node. Each node can launch 8 distributed processes, one per split. Each processes can have several cores/threads assigned and used multi-threading to test many hyper-parameters in parallel, for example, using 16 threads depending on the environment. With this design, the task that will typically take about a week can be run in below an hour. We fitted our models using the system Stampede 2 at the [Texas Advanced Computing Center (TACC)](https://www.tacc.utexas.edu). This system is based on SLURM, a common cluster manager. For convenience and ease of reproducing, we provide a script `5_generate_slurmjobs.jl` that can be parametrized (see the first lines of the file) and will produce `bash` files that can be used in the super-computing environment.
+
+### Shiny App
+
+Some of the results can be visualized at our [Shiny App](https://mauriciogtec.shinyapps.io/gfen/). For convenience, the source code of the app is also a submodule of this repository.
+
+
+## Further Questions
+
+I'm happy to answer any queries. Shoot me an email at `mauriciogtec@utexas.edu`.
+
+Bon voyage!
+
+
+
+
+
 
 
 ![smoothing-animation](./map_animation.gif)
