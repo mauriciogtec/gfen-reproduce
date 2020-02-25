@@ -17,7 +17,7 @@ betafiles = readdir(joinpath(workdir(), betas_relpath()))
 # so that file size is smaller, in this case, they can best_betas
 # read in order and reassambled by horizontal concatenation
 num_files = 20
-smoothprobs_relpath() = "output_smooth_probs/probs.csv"
+smoothprobs_relpath() = "output_smooth_probs/"
 
 
 # read the data from the graph
@@ -76,7 +76,7 @@ else
         from = (i - 1) * chunksize + 1
         to = min(i * chunksize, num_nodes)
         chunk = probs[:, from:to]
-        fname = joinpath(smoothprobs_relpath(), "probschunk_$i.csv")
+        fname = joinpath(smoothprobs_relpath(), "probs-chunk_$i.csv")
         writedlm(fname, chunk, ',')
     end
 end
