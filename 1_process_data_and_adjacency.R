@@ -2,7 +2,6 @@ library(tidyverse)
 library(lubridate)
 library(raster)
 library(igraph)
-library(hashmap)
 library(progress)
 
 

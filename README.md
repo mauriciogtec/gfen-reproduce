@@ -1,6 +1,6 @@
 # Large-Scale Spatiotemporal Density Smoothing with the Graph-fused Elastic Net
 
-This repository contains all the code to necessary to reproduce our results. Here's a brief description of the contents of the repository. See the file `MANIFEST.Rmd` for a description of software versions I used. For the preprocessing steps it is necessary to have `R` and `python 3`. For convenience, I include the processed data in this repository, so that you don't have to go through those steps. The main algorithm is implemented using the high-performance computing software `Julia` with an open-source package we developed for this paper called `GraphFusedElasticNet.jl`. Below we provide further instructions.
+This repository contains all the code to necessary to reproduce our results. Here's a brief description of the contents of the repository. See the file `MANIFEST.md` for a description of software versions I used. For the preprocessing steps it is necessary to have `R` and `python 3`. For convenience, I include the processed data in this repository, so that you don't have to go through those steps. The main algorithm is implemented using the high-performance computing software `Julia` with an open-source package we developed for this paper called `GraphFusedElasticNet.jl`. Below we provide further instructions.
 
 
 ## 1. Raw Data
