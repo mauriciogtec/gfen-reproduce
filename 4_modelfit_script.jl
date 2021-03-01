@@ -1,50 +1,36 @@
-# set-up distributed environment
-using Pkg
-
-# first make sure all packages necessary are loaded
-workdir() = pwd()
-GFEN_relpath() = "GraphFusedElasticNet.jl/"
-Pkg.activate(joinpath(workdir(), GFEN_relpath()))
-Pkg.instantiate()
-
-
+using Pkg; Pkg.activate("GraphFusedElasticNet.jl")
 using Distributed
 
 
-# relevant path (ADAPT TO CLUSTER IF NECESSARY)
-@everywhere begin
-    workdir() = pwd()
-    GFEN_relpath() = "GraphFusedElasticNet.jl/"
-    traildata_relpath() = "processed_data/trails.json"
-    betas_relpath() = "best_betas/"
-    fitmetrics_relpath() = "modelfit_metrics/"
-    data_relpath() = "productivity_splits/"
-    flist = readdir(joinpath(workdir(), data_relpath()))
-end
-
+# if in slurm cluster environment (TACC)
+PROCID = haskey(ENV, "SLURM_PROCID") ? parse(Int, ENV["SLURM_PROCID"]) : -1
+INTERACTIVE_SESSION = true 
 
 # only set to true if running interactive
 # not if running from batch file
-@everywhere RUNNING_INTERACTIVE = false 
-if RUNNING_INTERACTIVE
+if INTERACTIVE_SESSION
     walltime = 120.0
     ngens = 4
     gensize = 16
     cvsplits = 5
-    data_targets = flist
+    data_targets = readdir("productivity_splits")
+    num_procs = 6
 else
     walltime = parse(Float64, ARGS[1])
     ngens = parse(Int, ARGS[2])
     gensize = parse(Int, ARGS[3])
     cvsplits = parse(Int, ARGS[4])
     data_targets = ARGS[5:end]
+    num_procs = 1
 end
 
+if num_procs > 1
+    addprocs(num_procs - 1, exeflags="--project=GraphFusedElasticNet.jl")
+end
 
-# instatiate and load libraries in every process
+# relevant path (ADAPT TO CLUSTER IF NECESSARY)
 @everywhere begin
-    using Pkg
-    Pkg.activate(joinpath(workdir(), GFEN_relpath()))
+    # instantiate and load libraries in every process, define globals
     using JSON
     using DataFrames
     using Dates
@@ -54,15 +40,14 @@ end
     using Base.Threads
     using DelimitedFiles
     using GraphFusedElasticNet
+    
+    workdir() = pwd()
+    traildata_relpath() = "processed_data/trails.json"
+    betas_relpath() = "best_betas/"
+    fitmetrics_relpath() = "modelfit_metrics/"
+    data_relpath() = "productivity_splits/"
 end
 
-
-# if in slurm cluster environment (TACC)
-using ClusterManagers
-if haskey(ENV, "SLURM_NTASKS")
-    np = parse(Int, ENV["SLURM_NTASKS"])
-    addprocs(SlurmManager(np))
-end
 
 
 # data reader
@@ -148,7 +133,7 @@ end
     avalpha = zeros(npars)      
     # prepare the tree structure and the bint 
     Nobs = sum(y[:, 2])
-    @threads for k = 1:npars
+    Threads.@threads for k = 1:npars
         λ1, λ2, η1, η2 = pars[k]
         for i = 1:cvsplits
             thrdid[k] = threadid()
@@ -361,8 +346,17 @@ end
 
 # define and call main routine using distributed computing
 function main(data_targets, walltime, ngens, gensize, cvsplits)
-    @sync @distributed for filename in data_targets
-        fit_split(filename, walltime, cvsplits, ngens, gensize)
+    PROCID >= 0 && (data_targets = [data_targets[PROCID + 1]])
+    if num_procs > 0
+        @sync @distributed for filename in data_targets
+            println("Processing $(filename) in process $(PROCID)...")
+            fit_split(filename, walltime, cvsplits, ngens, gensize)
+        end
+    else
+        for filename in data_targets
+            println("Processing $(filename) in process $(PROCID)...")
+            fit_split(filename, walltime, cvsplits, ngens, gensize)
+        end
     end
 end
 

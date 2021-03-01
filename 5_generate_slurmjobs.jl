@@ -5,7 +5,7 @@
 # how many job files to create (targets will be split in files)
 # each file will correspond to one cluster or the ones specified
 nclusters = 1
-procs = 7
+procs = 12
 # for cluster (supercomputing) environments you need to specify queue
 # each environment has different queues
 queue = "skx-normal"
@@ -14,27 +14,26 @@ cmd = "sbatch"
 # julia path, usually in cluster must me specified, if julia is
 # on a personal computer and its in the path just write julia
 juliapath = "julia"
-# juliapath = "/home1/05863/mgarciat/julia-1.0.2/julia"
+# juliapath = "/home1/05863/mgarciat/julia-1./julia"
 # jobname used by slurm launcher
 jobname = "rideaustin"
 # max running time
-maxjobtime = "6:0:0"
+maxjobtime = "12:0:0"
 
 # -- MODEL FIT VARIABLES ---
 # variables that will be passed to model_script.jl
 workspace = pwd()  # for home computer
-# wdir = "/home1/05863/mgarciat/GraphFusedLasso/"  # if in cluster
 modelscript = joinpath(workspace, "4_modelfit_script.jl")
-ngens = 4
+ngens = 16
 gensize = 16
-num_threads = 1
+num_threads = 5
 walltime = 300.0
 cvsplits = 5
 datadir = joinpath(workspace, "productivity_splits/")
 # name for the resulting bash file
 launcherfile = joinpath(workspace, "slurm_launcher.sh")
-jobdir = joinpath(workspace, "bash_scripts")
-
+jobdir = joinpath(workspace, "job_scripts")
+allocation = "Measuring-exposure-t"
 
 # this is the header of the script
 header = """#!/bin/bash
@@ -44,6 +43,7 @@ header = """#!/bin/bash
 #SBATCH -p $queue
 #SBATCH -J $jobname
 #SBATCH -t $maxjobtime
+#SBATCH -A $allocation
 #
 export WALLTIME=$(float(walltime))
 export JULIAPATH="$juliapath"
@@ -53,7 +53,7 @@ export GENSIZE=$gensize
 export CVSPLITS=$cvsplits
 export JULIA_NUM_THREADS=$num_threads
 #
-\$JULIAPATH \$SCRIPT \$WALLTIME \$NGENS \$GENSIZE \$CVSPLITS"""
+srun \$JULIAPATH \$SCRIPT \$WALLTIME \$NGENS \$GENSIZE \$CVSPLITS"""
 
 if isfile(launcherfile)
     rm(launcherfile)
