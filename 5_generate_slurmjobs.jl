@@ -29,7 +29,7 @@ ngens = 4
 gensize = 16
 num_threads = 1
 walltime = 300.0
-nsplits = 5
+cvsplits = 5
 datadir = joinpath(workspace, "productivity_splits/")
 # name for the resulting bash file
 launcherfile = joinpath(workspace, "slurm_launcher.sh")
@@ -50,10 +50,10 @@ export JULIAPATH="$juliapath"
 export SCRIPT="$modelscript"
 export NGENS=$ngens
 export GENSIZE=$gensize
-export NSPLITS=$nsplits
+export CVSPLITS=$cvsplits
 export JULIA_NUM_THREADS=$num_threads
 #
-\$JULIAPATH \$SCRIPT \$WALLTIME \$NGENS \$GENSIZE \$NSPLITS"""
+\$JULIAPATH \$SCRIPT \$WALLTIME \$NGENS \$GENSIZE \$CVSPLITS"""
 
 if isfile(launcherfile)
     rm(launcherfile)

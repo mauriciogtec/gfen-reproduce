@@ -73,9 +73,9 @@ g.add_edges_from(links)
 
 
 # %% vertex info
-node = list(g.nodes())
-node2vertex = {x: i for i, x in enumerate(node)}
-df = pd.DataFrame({'node': node})
+nodes = list(g.nodes())
+node2vertex = {x: i for i, x in enumerate(nodes)}
+df = pd.DataFrame({'node': nodes})
 df['vertex'] = [node2vertex[node] for node in nodes]
 df['taz'] = [int(node.split("-")[0]) for node in nodes]
 df['hour'] = [int(node.split("-")[1]) for node in nodes]
@@ -110,7 +110,8 @@ print(f"...saved spatiotemporal graph in {fname}")
 
 #%% read split data
 fname = "./processed_data/splitlevels.csv"
-splitlevels = np.genfromtxt(fname)
+splitlevels = pd.read_csv("processed_data/splits_opt_pt.csv")
+
 
 # %% sort data in vertices
 vertexdata = [[] for _ in range(len(nodes))]
@@ -120,47 +121,36 @@ for value, node in zip(data.productivity, data.node):
 
 # %% bin counts
 N = len(vertexdata)
-M = len(splitlevels) - 1
-cntmat = np.zeros((N, M), dtype=int)
-for i in range(N):
-    vdata = vertexdata[i]
-    for j in range(M):
-        left, right = splitlevels[j:j+2]
-        cnt = 0
-        for x in vdata:
-            if (left <= x) and (x <= right):
-                cnt += 1
-        cntmat[i, j] = cnt
+M = splitlevels.shape[0]
 
+attempts = np.zeros((N, M), dtype=int)  # data in cell
+successes = np.zeros((N, M), dtype=int)  # data in left split
+
+for j in range(M):
+    left, mid, right = splitlevels.iloc[j, :3]
+    for i, vdata in enumerate(vertexdata):
+        for x in vdata:
+            if (left <= x < right):
+                attempts[i, j] += 1
+                if (left <= x < mid):
+                    successes[i, j] += 1
 
 
 # %% now create splitdata files
 directory = "./productivity_splits"
 print(f"...saving data splits in {directory}/")
 
-nlevels = int(np.log2(M - 1)) + 1
-for level in range(nlevels):
-    nsplits = 2 ** level
-    for k in range(nsplits):
-        width = 2**(nlevels - level)
+for j in range(M):
+    sj, aj = successes[:, j], attempts[:, j]
+    splitinfo = ', '.join(f"{x:.2f}" for x in splitlevels.iloc[j, :])
+    print("- split " + splitinfo)
+    print(f"  successes: {sj.sum()}  attempts {aj.sum()}")
 
-        left_start = width * k 
-        left_end = width * k + width // 2
-        right_start = width * k + width // 2 
-        right_end = width * (k + 1)
+    fname = f"{directory}/{j:02d}.csv"
+    dat = np.column_stack([sj, aj])
 
-        print("split ({}:{})-({}:{})...".format(
-            left_start, left_end, right_start, right_end))
-        successes = cntmat[:, left_start:left_end].sum(axis=1)
-        attempts = cntmat[:, left_start:right_end].sum(axis=1)
+    print(f"  saving to file {fname}...")
+    np.savetxt(fname, dat, fmt="%d", delimiter=',')        
 
-        print("  total successes: {}  total attempts {}".format(
-            successes.sum(), attempts.sum()))        
 
-        fname = "{}/split_{}-{}.csv".format(
-            directory, left_start, right_end)
-        dat = np.column_stack([successes, attempts])
-
-        print(f"  saving to file {fname}...")
-        np.savetxt(fname, dat, fmt="%d", delimiter=',')        
-
+# %%

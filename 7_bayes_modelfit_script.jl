@@ -30,13 +30,13 @@ if RUNNING_INTERACTIVE
     walltime = 120.0
     ngens = 4
     gensize = 16
-    cvsplits = 5
+    nsplits = 5
     data_targets = flist
 else
     walltime = parse(Float64, ARGS[1])
     ngens = parse(Int, ARGS[2])
     gensize = parse(Int, ARGS[3])
-    cvsplits = parse(Int, ARGS[4])
+    nsplits = parse(Int, ARGS[4])
     data_targets = ARGS[5:end]
 end
 
@@ -79,23 +79,11 @@ end
 
 
 # generates sets of nodes to take out during cv
-@everywhere function generate_cvsets(y, cvsplits)
+@everywhere function load_map_betas(y, nsplits)
     # make the cv splits
     # the only trick is not to count the integers that 
     # have missing data
-    attempts = y[:, 1]
-    N = length(attempts)
-    cvsets = [Set{Int}() for i in 1:cvsplits]
-    iobs = [i for (i, a) in enumerate(attempts) if a >= 1.0]
-    shuffle!(iobs)
-    Nobs = length(iobs)
-    splitsize = Nobs ÷ cvsplits
-    for k in 1:cvsplits
-        for i in ((k - 1) * splitsize + 1):(k * splitsize)
-            push!(cvsets[k], iobs[i])
-        end
-    end
-    return cvsets
+    
 end
 
 
@@ -132,79 +120,11 @@ end
     return model
 end
 
-                
-# finds best hyperparams using cross validation
-@everywhere function cv_eval(
-        y, ptr, brks, wts, istemp,
-        pars, cvsets,
-        modelopts, fitopts, usethreads)
-    # for each cv split get the mse error
-    N = size(y, 1)
-    cvsplits = length(cvsets)
-    npars = length(pars)
-    cv_logll = zeros(npars)
-    thrdid = zeros(Int, npars)   
-    avtime = zeros(npars)      
-    avalpha = zeros(npars)      
-    # prepare the tree structure and the bint 
-    Nobs = sum(y[:, 2])
-    @threads for k = 1:npars
-        λ1, λ2, η1, η2 = pars[k]
-        for i = 1:cvsplits
-            thrdid[k] = threadid()
-            # get the cv vector with missing data
-            ytrain = get_train_data(y, cvsets[i])
-            runningtime = @elapsed begin
-                model = fit_model(
-                    ytrain, ptr, brks, wts, istemp,
-                    λ1, λ2, η1, η2, modelopts, fitopts)
-            end
-            beta = model.beta
-            avtime[k] += runningtime   
-            avalpha[k] += model.admm_penalty
-            # compute the out-of-sample likelihood
-            ll = 0.0
-            for j in cvsets[i]
-                s, N = y[j, :]
-                ρ = sigmoid(beta[j])
-                ll += s * log(ρ + 1e-12) + (N - s) * log(1.0 - ρ + 1e-12)
-            end
-            cv_logll[k] = ll 
-        end
-    end
-    cv_logll /= Nobs
-    avtime /= cvsplits
-    avalpha /= cvsplits
-    cv_logll, thrdid, avtime, avalpha
-end
-
 
 # main program
-@everywhere function fit_split(filename, walltime, cvsplits, ngens, gensize)
+@everywhere function fit_split(filename, walltime, nsplits, ngens, gensize)
     # read trail data (it is then copied to each worker by pmap)
     ptr, brks, wts, istemp, num_nodes = loadtrails()
-
-    # set up gaussian process with smoothing parameters
-    # (7 ^ 4) = 2401 parameter space size
-    # Kernel matrix is 2401 x 2401 (196,882 entries)
-    # for much larger spaces consider more efficient
-    # implementations of gaussian processes
-    sl1 = [1e-2,  0.25, 0.5, 0.75, 1.25, 2.5, 5.0]
-    sl2 = [1e-2,  0.5, 1.0, 2.5, 5.0, 10.0, 20.0]
-    tl1 = [1e-2,  0.25, 0.5, 0.75, 1.25, 2.5, 5.0]
-    tl2 = [1e-2,  0.5, 1.0, 2.5, 5.0, 10.0, 20.0]
-
-    hparams = hcat([[a, b, c, d]
-                    for a in sl1
-                    for b in sl2
-                    for c in tl1
-                    for d in tl2]...)
-
-    nl = size(hparams, 2)
-    a, σ, b = 0.1, 0.00001, 0.0001^2
-    X = log.(hparams)
-    gpsampler = GaussianProcessSampler(X, a=a, σ=σ, b=b)
-    gp_offset = 0.0  # empirically assigned to running obs mean
 
     # model parameters
     modelopts = Dict{Symbol, Any}(
@@ -225,7 +145,7 @@ end
     # read data
     fname = joinpath(workdir(), data_relpath(), filename)
     y = readdlm(fname, ',') 
-    cvsets = generate_cvsets(y, cvsplits)  
+    cvsets = generate_cvsets(y, nsplits)  
     
     # df = Vector{DataFrame}(undef, ngens)
     results = []
@@ -322,18 +242,15 @@ end
     betasfile = joinpath(
         workdir(),
         betas_relpath(),
-        "betas_" * filename
-    )
+        "betas_" * filename[6:end-4] * ".csv")
     resultsfile = joinpath(
         workdir(),
         fitmetrics_relpath(),
-        "cvloss_" * filename
-    )
+        "cvloss_" * filename[6:end-4] * ".csv")
     gpfile = joinpath(
         workdir(),
         fitmetrics_relpath(),
-        "gp_" * filename
-    )
+        "gp_" * filename[6:end-4] * ".csv")
 
     # write results
     CSV.write(resultsfile, results)
@@ -360,14 +277,14 @@ end
 
 
 # define and call main routine using distributed computing
-function main(data_targets, walltime, ngens, gensize, cvsplits)
+function main(data_targets, walltime, ngens, gensize, nsplits)
     @sync @distributed for filename in data_targets
-        fit_split(filename, walltime, cvsplits, ngens, gensize)
+        fit_split(filename, walltime, nsplits, ngens, gensize)
     end
 end
 
 
-main(data_targets, walltime, ngens, gensize, cvsplits)
+main(data_targets, walltime, ngens, gensize, nsplits)
 
 
 # clean up processes
