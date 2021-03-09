@@ -2,13 +2,11 @@ using Pkg; Pkg.activate("GraphFusedElasticNet.jl")
 using Distributed
 
 
-# if in slurm cluster environment (TACC)
-PROCID = haskey(ENV, "SLURM_PROCID") ? parse(Int, ENV["SLURM_PROCID"]) : -1
-INTERACTIVE_SESSION = true 
 
 # only set to true if running interactive
 # not if running from batch file
-if INTERACTIVE_SESSION
+debug_mode = false  # Base.isinteractive()
+if debug_mode
     walltime = 120.0
     ngens = 4
     gensize = 16
@@ -23,7 +21,6 @@ else
     data_targets = ARGS[5:end]
     num_procs = 1
 end
-
 if num_procs > 1
     addprocs(num_procs - 1, exeflags="--project=GraphFusedElasticNet.jl")
 end
@@ -39,6 +36,7 @@ end
     using CSV
     using Base.Threads
     using DelimitedFiles
+    using StatsFuns
     using GraphFusedElasticNet
     
     workdir() = pwd()
@@ -96,23 +94,17 @@ end
 end
 
 
-# useful to compute loglikelihod
-@everywhere function sigmoid(x::Float64)::Float64
-    1.0 / (1.0 + exp(-x))
-end
-
-
 # fits a binomial GFEN model for given params and data
 @everywhere function fit_model(
-        ytrain, ptr, brks, wts, istemp,
-        λ1, λ2, η1, η2, modelopts, fitopts)
+    ytrain, ptr, brks, wts, istemp, λ1, λ2, η1, η2, modelopts, fitopts; ϵ=1e-5
+)
     N = size(ytrain, 1)
     lambdasl1 = [w * (t ? η1 : λ1) for (t, w) in zip(istemp, wts)]
     lambdasl2 = [w * (t ? η2 : λ2) for (t, w) in zip(istemp, wts)]
     # define and train model
     model = BinomialGFEN(ptr, brks, lambdasl1, lambdasl2; modelopts...)
-    succ = ytrain[:, 1] .+ 0.05
-    att = ytrain[:, 2] .+ 0.1
+    succ = ytrain[:, 1] .+ ϵ
+    att = ytrain[:, 2] .+ 2ϵ
     fit!(model, succ, att; fitopts...)
     return model
 end
@@ -120,9 +112,8 @@ end
                 
 # finds best hyperparams using cross validation
 @everywhere function cv_eval(
-        y, ptr, brks, wts, istemp,
-        pars, cvsets,
-        modelopts, fitopts, usethreads)
+    y, ptr, brks, wts, istemp, pars, cvsets, modelopts, fitopts, usethreads
+)
     # for each cv split get the mse error
     N = size(y, 1)
     cvsplits = length(cvsets)
@@ -151,8 +142,12 @@ end
             ll = 0.0
             for j in cvsets[i]
                 s, N = y[j, :]
-                ρ = sigmoid(beta[j])
-                ll += s * log(ρ + 1e-12) + (N - s) * log(1.0 - ρ + 1e-12)
+                β = beta[j]
+                if beta[j] >= 0
+                    ll += - N * log(1.0 + exp(-β)) - (N - s) * β
+                else
+                    ll += s * β - N * log(1.0 + exp(β))
+                end
             end
             cv_logll[k] = ll 
         end
@@ -165,7 +160,7 @@ end
 
 
 # main program
-@everywhere function fit_split(filename, walltime, cvsplits, ngens, gensize)
+@everywhere function fit_split(filename, walltime, cvsplits, ngens, gensize, eval_corners=true)
     # read trail data (it is then copied to each worker by pmap)
     ptr, brks, wts, istemp, num_nodes = loadtrails()
 
@@ -174,10 +169,10 @@ end
     # Kernel matrix is 2401 x 2401 (196,882 entries)
     # for much larger spaces consider more efficient
     # implementations of gaussian processes
-    sl1 = [1e-2,  0.25, 0.5, 0.75, 1.25, 2.5, 5.0]
-    sl2 = [1e-2,  0.5, 1.0, 2.5, 5.0, 10.0, 20.0]
-    tl1 = [1e-2,  0.25, 0.5, 0.75, 1.25, 2.5, 5.0]
-    tl2 = [1e-2,  0.5, 1.0, 2.5, 5.0, 10.0, 20.0]
+    sl1 = [1e-3,  0.25, 0.5, 0.75, 1.25, 2.5, 5.0]
+    sl2 = [1e-3,  0.5, 1.0, 2.5, 5.0, 10.0, 20.0]
+    tl1 = [1e-3,  0.25, 0.5, 0.75, 1.25, 2.5, 5.0]
+    tl2 = [1e-3,  0.5, 1.0, 2.5, 5.0, 10.0, 20.0]
 
     hparams = hcat([[a, b, c, d]
                     for a in sl1
@@ -214,46 +209,48 @@ end
     
     # df = Vector{DataFrame}(undef, ngens)
     results = []
+    corners = Set{Int}()
     for gen in 1:ngens
         # sample lambdas from generation
         if gen == 1
-            if gensize == 16
-                # evaluate first in all the corners !
-                idx = Int[]
-                a, b = minimum(sl1), minimum(sl2)
-                A, B = maximum(sl2), maximum(tl2)
-                c, d = minimum(tl1), minimum(tl2)
-                C, D = maximum(tl1), maximum(tl2)
-                for j in 1:nl
-                    if (hparams[1, j] in [a, A] &&
-                        hparams[2, j] in [b, B] &&
-                        hparams[3, j] in [c, C] &&
-                        hparams[4, j] in [d, D])
-                        push!(idx, j)
-                    end
-                end
-            else
-                idx = sample(1:nl, gensize, replace=false)
-            end
+            idx = sample(1:nl, gensize, replace=false)
             prev_pred = fill(-Inf, gensize)
             prev_sd = fill(0.0, gensize)
         else
             idx, _, _, prev_pred, prev_sd  = gpsample(gpsampler, gensize)
         end
-        pars = [hparams[:, i] for i in idx]
-        slambdasl1 = hparams[1, idx]
-        slambdasl2 = hparams[2, idx]
-        tlambdasl1 = hparams[3, idx]
-        tlambdasl2 = hparams[4, idx]
+        
+        # override to eval first corners
+        if eval_corners && length(corners) < 16
+            # override to evaluate first in all the corners!
+            overriden = 0
+            for sl1_ in [minimum(sl1), maximum(sl1)]
+                for sl2_ in [minimum(sl2), maximum(sl2)]
+                    for tl1_ in [minimum(tl1), maximum(tl1)]
+                        for tl2_ in [minimum(tl2), maximum(tl2)]
+                            for j in 1:nl
+                                if (
+                                    overriden < gensize
+                                    && !(j in corners)
+                                    && hparams[1, j] == sl1_
+                                    && hparams[2, j] == sl2_
+                                    && hparams[3, j] == tl1_
+                                    && hparams[4, j] == tl2_
+                                )   
+                                    overriden += 1
+                                    idx[overriden] = j
+                                    push!(corners, j)
+        end end end end end end end
 
         # run for every lambda in thread
         fns = fill(filename, gensize)
         pids = fill(getpid(), gensize)
         hosts = fill(gethostname()[1:8], gensize)
         gens = fill(gen, gensize)
-
+        
         # obtain cv losses and update gaussian process
         usethreads = true
+        pars = [hparams[:, i] for i in idx]
         cv_logll, thrds, avtime, avalpha = cv_eval(
             y, ptr, brks, wts, istemp,
             pars, cvsets,
@@ -267,6 +264,10 @@ end
         gp_offset = (gp_offset *  N0 +  sum(cv_logll)) / N1
         gpsampler.offset = gp_offset
 
+        slambdasl1 = hparams[1, idx]
+        slambdasl2 = hparams[2, idx]
+        tlambdasl1 = hparams[3, idx]
+        tlambdasl2 = hparams[4, idx]
         df = DataFrame(
             fn=fns, pid=pids, host=hosts, thread=thrds,
             λsl1=slambdasl1, λsl2=slambdasl2, λtl1=tlambdasl1, λtl2=tlambdasl2,
@@ -346,15 +347,27 @@ end
 
 # define and call main routine using distributed computing
 function main(data_targets, walltime, ngens, gensize, cvsplits)
-    PROCID >= 0 && (data_targets = [data_targets[PROCID + 1]])
-    if num_procs > 0
+    # if in slurm cluster environment (TACC)
+    local_rank = haskey(ENV, "SLURM_PROCID") ? parse(Int, ENV["SLURM_PROCID"]) : -1
+
+    if local_rank >= 0
+        # running in MPI style of parallel program, each program has
+        #   a rank and selects one target
+        data_targets = [data_targets[local_rank + 1]]
+    end
+
+    if num_procs > 1
         @sync @distributed for filename in data_targets
-            println("Processing $(filename) in process $(PROCID)...")
+            # running in in-program distributed mode, the program will
+            #   schedule a file for each subprocess
+            m = "Processing $(filename) in process $(getpid()) with rank $(local_rank)..."
+            println(m)
             fit_split(filename, walltime, cvsplits, ngens, gensize)
         end
     else
         for filename in data_targets
-            println("Processing $(filename) in process $(PROCID)...")
+            m = "Processing $(filename) in process $(getpid()) with rank $(local_rank)..."
+            println(m)
             fit_split(filename, walltime, cvsplits, ngens, gensize)
         end
     end
@@ -362,9 +375,3 @@ end
 
 
 main(data_targets, walltime, ngens, gensize, cvsplits)
-
-
-# clean up processes
-for p in workers()
-    rmprocs(p)
-end

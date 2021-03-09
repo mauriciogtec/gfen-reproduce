@@ -4,10 +4,11 @@
 # --- TASK VARIABLES ---
 # how many job files to create (targets will be split in files)
 # each file will correspond to one cluster or the ones specified
-nclusters = 1
-procs = 12
+nnodes = 1
+procs = 9
 # for cluster (supercomputing) environments you need to specify queue
 # each environment has different queues
+# queue = "normal"
 queue = "skx-normal"
 # slurm command
 cmd = "sbatch"
@@ -18,16 +19,17 @@ juliapath = "julia"
 # jobname used by slurm launcher
 jobname = "rideaustin"
 # max running time
-maxjobtime = "12:0:0"
+maxjobtime = "24:00:00"
 
 # -- MODEL FIT VARIABLES ---
 # variables that will be passed to model_script.jl
 workspace = pwd()  # for home computer
 modelscript = joinpath(workspace, "4_modelfit_script.jl")
-ngens = 16
-gensize = 16
-num_threads = 5
+ngens = 48
+gensize = 4
+num_threads = 10
 walltime = 300.0
+# walltime = 300.0
 cvsplits = 5
 datadir = joinpath(workspace, "productivity_splits/")
 # name for the resulting bash file
@@ -38,7 +40,7 @@ allocation = "Measuring-exposure-t"
 # this is the header of the script
 header = """#!/bin/bash
 #
-#SBATCH -N $nclusters
+#SBATCH -N $nnodes
 #SBATCH -n $procs
 #SBATCH -p $queue
 #SBATCH -J $jobname
