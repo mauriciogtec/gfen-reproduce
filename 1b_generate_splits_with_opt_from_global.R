@@ -56,7 +56,7 @@ splits_uni = max_X * seq(2^(-5), 1 - 2^(-5), length.out=2^5 - 1)
 parts = mod$part_points_hmap
 
 d = max.resol
-tmp = min_X + range_X * seq(0, 1, length.out=2^d)
+tmp = min_X + range_X * seq(0, 1, length.out=2^d + 1)
 
 splits = c()
 lvls = c()
@@ -70,10 +70,10 @@ for (i in 1:nrow(parts))
 
 for (i in 1:nrow(parts)) {
   low = parts[i, 1] + 1
-  high = parts[i, 2] + 1
+  high = parts[i, 2] + 2
   ix_mid = as.integer((parts[i, 2] + parts[i, 1] - 1) %/% 2)
   child_split = c(as.integer(parts[i, 1]), ix_mid)
-  if ((low != high) && set$has(child_split)) {
+  if (!is.infinite(parts[i, 4])) {
     # only if not leaf node
     count = count + 1
     lvls[count] = parts[i, 3]

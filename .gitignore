@@ -2,4 +2,4 @@
 **/*.init
 .Rproj.user
 **/*.out
-**/best_betas_bayesian
+best_betas_bayesian/*.npz
