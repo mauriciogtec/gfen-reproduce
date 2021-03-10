@@ -10,7 +10,7 @@
 #
 export JULIAPATH="julia"
 export SCRIPT="/work/05863/mgarciat/stampede2/gfen-reproduce/7_bayes_modelfit_script.jl"
-export JULIA_NUM_THREADS=10
+export JULIA_NUM_THREADS=8
 
 #
-srun $JULIAPATH $SCRIPT $SLURM_PROCID
+srun $JULIAPATH $SCRIPT

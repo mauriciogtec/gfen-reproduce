@@ -1,28 +1,32 @@
-using Pkg; Pkg.activate("GraphFusedElasticNet.jl")
+using Pkg
+Pkg.activate("GraphFusedElasticNet.jl")
+# Pkg.instantiate()
+
 using DataFrames
 using Printf
 using DelimitedFiles
 using JSON
-using GraphFusedElasticNet
 using NPZ
+using GraphFusedElasticNet
 
 debug = false
 if debug
     split_to_fit = 3
 else
-    split_to_fit = (length(ARGS) > 0 && isa(ARGS[1], Int)) ? (ARGS[1] + 1) : 3
+    split_to_fit =  parse(Int, ENV["SLURM_PROCID"])
 end
-##
-splits = readtable("processed_data/splits_opt_pt.csv")
-split = splits[split_to_fit, :]
 
 ##
-fname = @sprintf("productivity_splits/%02d.csv", split_to_fit + 1)
+splits = readtable("processed_data/splits_opt_pt.csv")
+split = splits[split_to_fit + 1, :]
+
+##
+fname = @sprintf("productivity_splits/%02d.csv", split_to_fit)
 splitdata = readdlm(fname, ',')
 println("Fitting to data $(fname)...")
 
 ## find best lambda
-fname = @sprintf("modelfit_metrics/cvloss_%02d.csv", split_to_fit + 1)
+fname = @sprintf("modelfit_metrics/cvloss_%02d.csv", split_to_fit)
 best_lams = readtable(fname)
 best_row = argmax(best_lams.final_pred)
 λsl1 = best_lams.λsl1[best_row]
@@ -38,9 +42,7 @@ num_nodes = size(splitdata, 1)
 num_edges = size(edges_df, 1)
 
 ## load data and map estimate for fast mixing
-fname = @sprintf("../gfen-reproduce/best_betas/betas_%02d.csv", split_to_fit)
-init = vec(readdlm(fname, ','))
-ϵ = 1e-6
+ϵ = 1e-3
 s = splitdata[:, 1] .+ ϵ
 a = splitdata[:, 2] .+ 2ϵ
 
@@ -67,15 +69,24 @@ modelopts = Dict{Symbol, Any}(
     :save_loss => false
 )
 fitopts = Dict{Symbol, Any}(
-    :walltime => 10.0,
+    :walltime => 300.0,
     :parallel => true
 )
 
 
 ## define and train model
-println("Fitting fast MAP mode...")
-map_mod = BinomialGFEN(ptr, brks, lambdasl1, lambdasl2; modelopts...)
-fit!(map_mod, s, a; fitopts...)
+fname = @sprintf("../gfen-reproduce/best_betas/betas_%02d.csv", split_to_fit)
+
+# println("Fitting fast MAP mode...")
+# map_mod = BinomialGFEN(ptr, brks, lambdasl1, lambdasl2; modelopts...)
+# fit!(map_mod, s, a; fitopts...)
+# mcmc_init = map_mod.beta
+# open(fname, "w") do io
+#     writedlm(io, map_mod.beta, ',')
+# end
+
+println("Loading MAP model...")
+mcmc_init = vec(readdlm(fname, ','))
 
 ##
 edges = [(r.vertex1 + 1, r.vertex2 + 1) for r in eachrow(edges_df)]
@@ -84,7 +95,7 @@ tv2 = [(r.temporal == 1) ? λtl2 : λsl2 for r in eachrow(edges_df)]
 
 println("Initializing MCMC chain...")
 mod = BayesianBinomialGFEN(edges, tv1=tv1, tv2=tv2)
-init = map_mod.beta
+
 
 ## fit model
 n = 1_000
@@ -92,7 +103,7 @@ thinning = 5
 burnin = 0.5
 
 ##
-chain = sample_chain(mod, s, a, n, init=init, verbose=false, async=true)
+chain = sample_chain(mod, s, a, n, init=mcmc_init, verbose=true, async=true)
 
 ##
 nstart = ceil(Int, size(chain, 2) * burnin)
