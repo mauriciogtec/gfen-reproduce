@@ -104,7 +104,7 @@ splits_df = tibble(
 )
 
 
-ggplot() +
+porig = ggplot() +
   geom_histogram(
     aes(x=productivity),
     bins=45,
@@ -127,10 +127,11 @@ ggplot() +
     axis.title.y = element_blank(),
     axis.title.x = element_text(size=10)
   )
-
+porig
 
 ggsave(
   "processed_data/splits_original_scale.pdf",
+  porig,
   width=10,
   height=12,
   units="cm"
@@ -139,7 +140,7 @@ ggsave(
 
 
 
-ggplot() +
+plog = ggplot() +
   geom_histogram(
     aes(x=productivity),
     bins=30,
@@ -162,9 +163,11 @@ ggplot() +
     axis.title.y = element_blank(),
     axis.title.x = element_text(size=10)
   )
+plog
 
 ggsave(
   "processed_data/splits_log_scale.pdf",
+  plog,
   width=10,
   height=12,
   units="cm"

@@ -9,9 +9,11 @@ using JSON
 using NPZ
 using GraphFusedElasticNet
 
-debug = false
+
+#
+debug = true
 if debug
-    split_to_fit = 3
+    split_to_fit = 0
 else
     split_to_fit =  parse(Int, ENV["SLURM_PROCID"])
 end
@@ -25,7 +27,7 @@ fname = @sprintf("productivity_splits/%02d.csv", split_to_fit)
 splitdata = readdlm(fname, ',')
 println("Fitting to data $(fname)...")
 
-## find best lambda
+## find be[s]t lambda
 fname = @sprintf("modelfit_metrics/cvloss_%02d.csv", split_to_fit)
 best_lams = readtable(fname)
 best_row = argmax(best_lams.final_pred)
@@ -61,7 +63,7 @@ modelopts = Dict{Symbol, Any}(
     :admm_init_penalty => 0.1,
     :admm_residual_balancing => true,
     :admm_adaptive_inflation => true,
-    :reltol => 1e-3,
+    :reltol => 1e-2,
     :admm_min_penalty => 0.1,
     :admm_max_penalty => 5.0,
     :abstol => 0.,
@@ -69,7 +71,7 @@ modelopts = Dict{Symbol, Any}(
     :save_loss => false
 )
 fitopts = Dict{Symbol, Any}(
-    :walltime => 300.0,
+    :walltime => 600.0,
     :parallel => true
 )
 
@@ -77,18 +79,19 @@ fitopts = Dict{Symbol, Any}(
 ## define and train model
 fname = @sprintf("../gfen-reproduce/best_betas/betas_%02d.csv", split_to_fit)
 
-# println("Fitting fast MAP mode...")
-# map_mod = BinomialGFEN(ptr, brks, lambdasl1, lambdasl2; modelopts...)
-# fit!(map_mod, s, a; fitopts...)
-# mcmc_init = map_mod.beta
-# open(fname, "w") do io
-#     writedlm(io, map_mod.beta, ',')
-# end
+println("Fitting MAP model...")
+map_mod = BinomialGFEN(ptr, brks, lambdasl1, lambdasl2; modelopts...)
+@time fit!(map_mod, s, a ; fitopts...)
+mcmc_init = map_mod.beta
+open(fname, "w") do io
+    writedlm(io, map_mod.beta, ',')
+end
 
 println("Loading MAP model...")
 mcmc_init = vec(readdlm(fname, ','))
 
 ##
+
 edges = [(r.vertex1 + 1, r.vertex2 + 1) for r in eachrow(edges_df)]
 tv1 = [(r.temporal == 1) ? λtl1 : λsl1 for r in eachrow(edges_df)]
 tv2 = [(r.temporal == 1) ? λtl2 : λsl2 for r in eachrow(edges_df)]
@@ -98,18 +101,20 @@ mod = BayesianBinomialGFEN(edges, tv1=tv1, tv2=tv2)
 
 
 ## fit model
-n = 1_000
-thinning = 5
+n = 5_000
+thinning = 25
 burnin = 0.5
 
 ##
-chain = sample_chain(mod, s, a, n, init=mcmc_init, verbose=true, async=true)
+init = mcmc_init  # zeros(size(mcmc_init))
+@time chain = sample_chain(mod, s, a, n, thinning=thinning, init=init, verbose=true, async=true)
 
 ##
 nstart = ceil(Int, size(chain, 2) * burnin)
-chain = chain[:, nstart:end]
+chain = chain[:, (nstart + 1):end]
 
 ##
-fname = @sprintf("best_betas_bayesian/%02d.npz", split_to_fit)
-println("Saving to $(fname) in Float16...")
+fname = @sprintf("best_betas_bayesian/%02d.npy", split_to_fit)
+println("Saving to $(fname) in Float32...")
+
 npzwrite(fname, Float16.(chain))
