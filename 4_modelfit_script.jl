@@ -247,13 +247,13 @@ end
         gp.offset = gp_offset
 
         pars = hcat(pars...)
-        slambdasl1 = pars[1, :]
-        slambdasl2 = pars[2, :]
-        tlambdasl1 = pars[3, :]
-        tlambdasl2 = pars[4, :]
+        λsl1 = pars[1, :]
+        λsl2 = pars[2, :]
+        λtl1 = pars[3, :]
+        λtl2 = pars[4, :]
         df = DataFrame(
             fn=fns, pid=pids, host=hosts, thread=thrds,
-            λsl1=slambdasl1, λsl2=slambdasl2, λtl1=tlambdasl1, λtl2=tlambdasl2,
+            λsl1=λsl1, λsl2=λsl2, λtl1=λtl1, λtl2=λtl2,
             cv_logll=cv_logll, time=avtime, alpha=avalpha, gen=gens,
             prev_pred=pred, prev_sd=band
         )
@@ -264,23 +264,23 @@ end
     # now obtain the best hyperperameters and train the best model
     results = vcat(results...)
     df = results
-    X = [[x...] for x in zip(df.slambdasl1, df.slambdasl2, df.tlambdasl1, df.tlambdasl2)]
+    X = [[x...] for x in zip(df.λsl1, df.λsl2, df.λtl1, df.λtl2)]
     pred, band = gpeval(gp, X)
     results.final_pred = pred
     results.final_sd = band
     #
     bestidx = argmax(results.final_pred)
     best_predicted = results.final_pred[bestidx]
-    λ1 = df.slambdasl1[bestidx]
-    λ2 = df.slambdasl2[bestidx]
-    η1 = df.tlambdasl1[bestidx]
-    η2 = df.tlambdasl2[bestidx]
+    λ1 = df.λsl1[bestidx]
+    λ2 = df.λsl2[bestidx]
+    η1 = df.λtl1[bestidx]
+    η2 = df.λtl2[bestidx]
 
     gpdf = DataFrame(
-        slambdasl1=df.slambdasl1,
-        slambdasl2=df.slambdasl2,
-        tlambdasl1=df.tlambdasl1,
-        tlambdasl2=df.tlambdasl2,
+        λsl1=df.λsl1,
+        λsl2=df.λsl2,
+        λtl1=df.λtl1,
+        λtl2=df.λtl2,
         pred=pred,
         band=band
     )
