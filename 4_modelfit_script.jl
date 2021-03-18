@@ -1,13 +1,14 @@
 using Pkg; Pkg.activate("GraphFusedElasticNet.jl")
 using Distributed
 
+##
 
 # only set to true if running interactive
 # not if running from batch file
 debug_mode = false  # Base.isinteractive()
 if debug_mode
-    walltime = 10.0
-    ngens = 8
+    walltime = 5.0
+    ngens = 5
     gensize = 4
     cvsplits = 5
     data_targets = readdir("productivity_splits")
@@ -159,22 +160,18 @@ end
 
 
 # main program
-@everywhere function fit_split(filename, walltime, cvsplits, ngens, gensize, eval_corners=true)
+@everywhere function fit_split(filename, walltime, cvsplits, ngens, gensize)
     # read trail data (it is then copied to each worker by pmap)
     ptr, brks, wts, istemp, num_nodes = loadtrails()
 
     # set up gaussian process with smoothing parameters
-    # (7 ^ 4) = 2401 parameter space size
-    # Kernel matrix is 2401 x 2401 (196,882 entries)
-    # for much larger spaces consider more efficient
-    # implementations of gaussian processes
     sl1 = Uniform(-4.0, 1.0)
     sl2 = Uniform(-4.0, 2.0)
     tl1 = Uniform(-4.0, 1.0)
     tl2 = Uniform(-4.0, 2.0)
     dists = [sl1, sl2, tl1, tl2]
 
-    a, σ, b = 0.1, 0.00001, 0.0001^2
+    a, σ, b = 0.1, 0.00001, 0.00005^2
     gp = RandomGaussianProcessSampler(dists, a=a, σ=σ, b=b)
     gp_offset = 0.0  # empirically assigned to running obs mean
 
@@ -213,12 +210,11 @@ end
     for gen in 1:ngens
         # sample lambdas from generation
         hparams, pred, band = gpsample(gp, gensize)
-        while length(corners) > 0
-            for j in 1:min(gensize, length(corners))
-                hparams[:, j] = pop!(corners)
-                pred[j] = -Inf
-                band[j] = 0
-            end
+        for j in 1:gensize
+            (length(corners) == 0) && break
+            hparams[:, j] = pop!(corners)
+            pred[j] = -Inf
+            band[j] = 0.0
         end
 
         # run for every lambda in thread
@@ -281,8 +277,8 @@ end
         λsl2=df.λsl2,
         λtl1=df.λtl1,
         λtl2=df.λtl2,
-        pred=pred,
-        band=band
+        final_pred=pred,
+        final_band=band
     )
     println("all tested points:")
     println(gpdf)

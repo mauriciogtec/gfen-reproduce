@@ -92,7 +92,5 @@ pmatt = pmat'[:, range(1, num_nodes, step=100)]
 plot(pmatt, c=:gray, alpha=0.05)
 
 ##
-
-##
 means = vec(sum(pmat .* xseq', dims=2))
 histogram(means)
