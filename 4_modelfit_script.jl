@@ -173,7 +173,7 @@ end
 
     a, σ, b = 0.5, 0.01, 1.0 / √(2π)
     gp = RandomGaussianProcessSampler(
-        dists, a=a, σ=σ, b=b, adaptive_renormalization=true
+        dists, a=a, σ=σ, b=b, adaptive_normalization=true
     )
     # gp_offset = 0.0  # empirically assigned to running obs mean
 
