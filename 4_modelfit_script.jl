@@ -11,7 +11,7 @@ if debug_mode
     ngens = 8
     gensize = 4
     cvsplits = 5
-    data_targets = readdir("productivity_splits")
+    data_targets = readdir("productivity_splits")[1:2]
     num_procs = 1
 else
     walltime = parse(Float64, ARGS[1])
