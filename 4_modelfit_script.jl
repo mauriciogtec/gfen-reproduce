@@ -5,10 +5,10 @@ using Distributed
 
 # only set to true if running interactive
 # not if running from batch file
-debug_mode = false  # Base.isinteractive()
+debug_mode = true  # Base.isinteractive()
 if debug_mode
-    walltime = 5.0
-    ngens = 5
+    walltime = 1.0
+    ngens = 8
     gensize = 4
     cvsplits = 5
     data_targets = readdir("productivity_splits")
@@ -171,9 +171,11 @@ end
     tl2 = Uniform(-4.0, 2.0)
     dists = [sl1, sl2, tl1, tl2]
 
-    a, σ, b = 0.1, 0.00001, 0.00005^2
-    gp = RandomGaussianProcessSampler(dists, a=a, σ=σ, b=b)
-    gp_offset = 0.0  # empirically assigned to running obs mean
+    a, σ, b = 0.5, 0.01, 1.0 / √(2π)
+    gp = RandomGaussianProcessSampler(
+        dists, a=a, σ=σ, b=b, adaptive_renormalization=true
+    )
+    # gp_offset = 0.0  # empirically assigned to running obs mean
 
     # model parameters
     modelopts = Dict{Symbol, Any}(
@@ -239,8 +241,8 @@ end
         # it's like using an empirical prior, it doesn't 
         # affect much regions with densely observed data
         N0, N1 = (gen - 1) * gensize, gen * gensize
-        gp_offset = (gp_offset *  N0 +  sum(cv_logll)) / N1
-        gp.offset = gp_offset
+        # gp_offset = (gp_offset *  N0 +  sum(cv_logll)) / N1
+        # gp.offset = gp_offset
 
         pars = hcat(pars...)
         λsl1 = pars[1, :]
