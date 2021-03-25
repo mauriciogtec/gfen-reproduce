@@ -11,7 +11,7 @@ using GraphFusedElasticNet
 
 
 #
-debug = true
+debug = false
 if debug
     split_to_fit = 0
 else
@@ -79,13 +79,13 @@ fitopts = Dict{Symbol, Any}(
 ## define and train model
 fname = @sprintf("../gfen-reproduce/best_betas/betas_%02d.csv", split_to_fit)
 
-println("Fitting MAP model...")
-map_mod = BinomialGFEN(ptr, brks, lambdasl1, lambdasl2; modelopts...)
-@time fit!(map_mod, s, a ; fitopts...)
-mcmc_init = map_mod.beta
-open(fname, "w") do io
-    writedlm(io, map_mod.beta, ',')
-end
+# println("Fitting MAP model...")
+# map_mod = BinomialGFEN(ptr, brks, lambdasl1, lambdasl2; modelopts...)
+# @time fit!(map_mod, s, a ; fitopts...)
+# mcmc_init = map_mod.beta
+# open(fname, "w") do io
+#     writedlm(io, map_mod.beta, ',')
+# end
 
 println("Loading MAP model...")
 mcmc_init = vec(readdlm(fname, ','))
@@ -101,20 +101,23 @@ mod = BayesianBinomialGFEN(edges, tv1=tv1, tv2=tv2)
 
 
 ## fit model
-n = 5_000
-thinning = 25
-burnin = 0.5
+# runs took anytime between 3 and 7 hours
+n = 2500
+thinning = 5
+burnin = 2000
+
+# n = 20
+# thinning = 2
+# burnin = 10
+
 
 ##
 init = mcmc_init  # zeros(size(mcmc_init))
-@time chain = sample_chain(mod, s, a, n, thinning=thinning, init=init, verbose=true, async=true)
-
-##
-nstart = ceil(Int, size(chain, 2) * burnin)
-chain = chain[:, (nstart + 1):end]
+@time chain = sample_chain(mod, s, a, n, burnin=burnin, thinning=thinning, init=init, verbose=false, async=true)
 
 ##
 fname = @sprintf("best_betas_bayesian/%02d.npy", split_to_fit)
 println("Saving to $(fname) in Float32...")
 
 npzwrite(fname, Float16.(chain))
+Float16.(chain)
