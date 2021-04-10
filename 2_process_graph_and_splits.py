@@ -112,8 +112,8 @@ print(f"...saved spatiotemporal graph in {fname}")
 
 
 #%% read split data
-# fname = "./processed_data/splitlevels.csv"
-splitlevels = pd.read_csv("processed_data/splits_opt_pt.csv")
+# splitlevels = pd.read_csv("processed_data/splits_opt_pt.csv")
+splitlevels = pd.read_csv("processed_data/splits_qua.csv")
 
 
 # %% sort data in vertices
