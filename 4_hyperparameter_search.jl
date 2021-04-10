@@ -8,9 +8,9 @@ using Distributed
 debug_mode = false  # Base.isinteractive()
 if debug_mode
     walltime = 1.0
-    ngens = 8
+    ngens = 24
     gensize = 4
-    cvsplits = 5
+    cvsplits = 4
     data_targets = readdir("productivity_splits")[1:2]
     num_procs = 1
 else
@@ -165,13 +165,13 @@ end
     ptr, brks, wts, istemp, num_nodes = loadtrails()
 
     # set up gaussian process with smoothing parameters
-    sl1 = Uniform(-3.0, 1.0)
+    sl1 = Uniform(-2.0, 1.0)
     sl2 = Uniform(-3.0, 2.0)
-    tl1 = Uniform(-3.0, 1.0)
+    tl1 = Uniform(-2.0, 1.0)
     tl2 = Uniform(-3.0, 2.0)
     dists = [sl1, sl2, tl1, tl2]
 
-    a, σ, b = 0.25, 0.01, 0.01
+    a, σ, b = 0.15, 0.1, 1.0
     gp = RandomGaussianProcessSampler(
         dists, a=a, σ=σ, b=b, adaptive_normalization=true
     )
@@ -179,13 +179,13 @@ end
 
     # model parameters
     modelopts = Dict{Symbol, Any}(
-        :admm_balance_every => 10,
-        :admm_init_penalty => 0.5,
+        :admm_balance_every => 20,
+        :admm_init_penalty => 1.0,
         :admm_residual_balancing => true,
         :admm_adaptive_inflation => false,
         :reltol => 1e-3,
-        :admm_min_penalty => 0.1,
-        :admm_max_penalty => 10.0,
+        :admm_min_penalty => 0.5,
+        :admm_max_penalty => 32.0,
         :abstol => 1e-6,
         :save_norms => true,
         :save_loss => true
@@ -211,7 +211,7 @@ end
     ]
     for gen in 1:ngens
         # sample lambdas from generation
-        hparams, pred, band = gpsample(gp, gensize)
+        hparams, sampled, pred, band = gpsample(gp, gensize)
         for j in 1:gensize
             (length(corners) == 0) && break
             hparams[:, j] = pop!(corners)
@@ -227,13 +227,14 @@ end
         
         # obtain cv losses and update gaussian process
         usethreads = true
+        pars_log10 = [hparams[:, i] for i in 1:gensize]
         pars = [10 .^ hparams[:, i] for i in 1:gensize]
         cv_logll, thrds, avtime, avalpha = cv_eval(
             y, ptr, brks, wts, istemp,
             pars, cvsets,
             modelopts, fitopts, usethreads
         )
-        for (xi, yi) in zip(pars, cv_logll)
+        for (xi, yi) in zip(pars_log10, cv_logll)
             addobs!(gp, xi, yi)
         end
         # update the offset helps with better estimates
@@ -285,15 +286,18 @@ end
     println("all tested points:")
     println(gpdf)
 
-    modelopts[:reltol] /= 10.0
-    fitopts = Dict{Symbol, Any}(
-        :parallel => true,  
-        :walltime => 16.0 * walltime)
-    runtime_final = @elapsed begin
-        model = fit_model(
-            y, ptr, brks, wts, istemp,
-            λ1, λ2, η1, η2, modelopts, fitopts)
-    end
+    # now final model is run together with mcmc script
+
+    # modelopts[:reltol] /= 10.0
+    # fitopts = Dict{Symbol, Any}(
+    #     :parallel => true,  
+    #     :walltime => 16.0 * walltime)
+    # runtime_final = @elapsed begin
+    #     model = fit_model(
+    #         y, ptr, brks, wts, istemp,
+    #         λ1, λ2, η1, η2, modelopts, fitopts)
+    # end
+
     betasfile = joinpath(
         workdir(),
         betas_relpath(),
@@ -310,27 +314,30 @@ end
         "gp_" * filename
     )
 
-    # write results
-    CSV.write(resultsfile, results)
-    CSV.write(gpfile, gpdf)
-    open(betasfile, "w") do f
-        writedlm(f, model.beta, ',')
+    if !debug_mode
+        CSV.write(resultsfile, results)
+        CSV.write(gpfile, gpdf)
     end
+
+    # # write results
+    # open(betasfile, "w") do f
+    #     writedlm(f, model.beta, ',')
+    # end
     
     println("Best model:")
     println("   split:     ", filename)
     println("   params:    ", (λ1, λ2, η1, η2))
     println("   predicted: ", best_predicted)
-    println("   runtime:   ", runtime_final)
+    # println("   runtime:   ", runtime_final)
     println("   generation:   ", results.gen[bestidx])
-    steps = model.steps
-    conv = model.converged
-    t = "$(Dates.Time(Dates.now()))"[1:5]
-    pnorm = model.prim_norms[end]
-    dnorm = model.dual_norms[end]
-    loss = model.loss[end]
-    admm_penalty = model.admm_penalty
-    println("steps=$steps, conv=$conv, t=$t, loss=$loss, pnorm=$pnorm, dnorm=$dnorm, alpha=$admm_penalty")
+    # steps = model.steps
+    # conv = model.converged
+    # t = "$(Dates.Time(Dates.now()))"[1:5]
+    # pnorm = model.prim_norms[end]
+    # dnorm = model.dual_norms[end]
+    # loss = model.loss[end]
+    # admm_penalty = model.admm_penalty
+    # println("steps=$steps, conv=$conv, t=$t, loss=$loss, pnorm=$pnorm, dnorm=$dnorm, alpha=$admm_penalty")
 end
 
 

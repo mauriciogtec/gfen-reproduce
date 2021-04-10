@@ -24,7 +24,7 @@ maxjobtime = "24:00:00"
 # -- MODEL FIT VARIABLES ---
 # variables that will be passed to model_script.jl
 workspace = pwd()  # for home computer
-modelscript = joinpath(workspace, "4_modelfit_script.jl")
+modelscript = joinpath(workspace, "4_hyperparameter_search.jl")
 ngens = 48
 gensize = 4
 num_threads = 10
