@@ -4,7 +4,7 @@
 #SBATCH -n 32
 #SBATCH -p normal
 #SBATCH -J rideaustin
-#SBATCH -t 8:00:00
+#SBATCH -t 16:00:00
 #SBATCH -A Measuring-exposure-t
 
 #

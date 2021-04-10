@@ -97,23 +97,22 @@ tv1 = [(r.temporal == 1) ? λtl1 : λsl1 for r in eachrow(edges_df)]
 tv2 = [(r.temporal == 1) ? λtl2 : λsl2 for r in eachrow(edges_df)]
 
 println("Initializing MCMC chain...")
-mod = BayesianBinomialGFEN(edges, tv1=tv1, tv2=tv2)
+bmod = BayesianBinomialGFEN(edges, tv1=tv1, tv2=tv2)
 
 
 ## fit model
 # runs took anytime between 3 and 7 hours
-n = 2500
+n = 5000
 thinning = 5
-burnin = 2000
+burnin = 4500
 
 # n = 20
 # thinning = 2
 # burnin = 10
 
-
 ##
 init = mcmc_init  # zeros(size(mcmc_init))
-@time chain = sample_chain(mod, s, a, n, burnin=burnin, thinning=thinning, init=init, verbose=false, async=true)
+@time chain = sample_chain(bmod, s, a, n, burnin=burnin, thinning=thinning, init=init, verbose=false, async=true)
 
 ##
 fname = @sprintf("best_betas_bayesian/%02d.npy", split_to_fit)
