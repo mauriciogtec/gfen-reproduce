@@ -96,7 +96,7 @@ end
 
 # fits a binomial GFEN model for given params and data
 @everywhere function fit_model(
-    ytrain, ptr, brks, wts, istemp, λ1, λ2, η1, η2, modelopts, fitopts; ϵ=1e-5
+    ytrain, ptr, brks, wts, istemp, λ1, λ2, η1, η2, modelopts, fitopts; ϵ=1e-3
 )
     N = size(ytrain, 1)
     lambdasl1 = [w * (t ? η1 : λ1) for (t, w) in zip(istemp, wts)]
@@ -165,13 +165,13 @@ end
     ptr, brks, wts, istemp, num_nodes = loadtrails()
 
     # set up gaussian process with smoothing parameters
-    sl1 = Uniform(-4.0, 1.0)
-    sl2 = Uniform(-4.0, 2.0)
-    tl1 = Uniform(-4.0, 1.0)
-    tl2 = Uniform(-4.0, 2.0)
+    sl1 = Uniform(-3.0, 1.0)
+    sl2 = Uniform(-3.0, 2.0)
+    tl1 = Uniform(-3.0, 1.0)
+    tl2 = Uniform(-3.0, 2.0)
     dists = [sl1, sl2, tl1, tl2]
 
-    a, σ, b = 0.1, 0.01, 1.0 / √(2π)
+    a, σ, b = 0.25, 0.01, 0.01
     gp = RandomGaussianProcessSampler(
         dists, a=a, σ=σ, b=b, adaptive_normalization=true
     )
@@ -180,13 +180,13 @@ end
     # model parameters
     modelopts = Dict{Symbol, Any}(
         :admm_balance_every => 10,
-        :admm_init_penalty => 0.1,
+        :admm_init_penalty => 0.5,
         :admm_residual_balancing => true,
-        :admm_adaptive_inflation => true,
-        :reltol => 5e-3,
+        :admm_adaptive_inflation => false,
+        :reltol => 1e-3,
         :admm_min_penalty => 0.1,
-        :admm_max_penalty => 5.0,
-        :abstol => 1e-5,
+        :admm_max_penalty => 10.0,
+        :abstol => 1e-6,
         :save_norms => true,
         :save_loss => true
     )
