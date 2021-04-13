@@ -11,13 +11,11 @@ using Statistics
 using Base.Threads
 using NPZ
 using GraphFusedElasticNet
-using RCall  # for plots
+# using RCall  # for plots
 using Plots
 
 ##
-save_map_estimates = true
-save_examples_samples = true
-eval_samples_at_examples_only = true
+eval_samples_at_examples_only = false
 
 
 # tazs of interest
@@ -200,11 +198,74 @@ plot!(
 # plot!(p, xseq, pmat_mean[nid, t, :], c=:orange, lw=2, alpha=0.5)
 xlims!(0.0, 100.0)
 
+## where to obtain pointwise estimates from
+src = pmat_map
+src = pmat_median
+
 ##
-histogram(means[id, t, :, :])
-
-
-## save sample sites
-if save_map
-    
+tail_quantities = [18.56, 21.64, 32.73, 34.74]
+pmats_point_tp = []
+for tq in tail_quantities
+    tprob(u) = sum(ui for (ui, xi) in zip(u, xseq) if xi ≥ tq)
+    mat = dropdims(mapslices(tprob, src, dims=3), dims=3)
+    push!(pmats_point_tp, mat)
 end
+tprob(u) = sum(ui for (ui, xi) in zip(u, xseq) if xi ≥ 21.64)
+pmats_tp21 = dropdims(mapslices(tprob, pmat, dims=4), dims=4)
+
+##
+bottoms = [0.1, 0.25, 0.5, 0.75]
+pmats_point_bot = []
+for lev in bottoms
+    quant(u) = xseq[findfirst(u -> (u ≥ lev), cumsum(u))]
+    mat = dropdims(mapslices(quant, src, dims=3), dims=3)
+    push!(pmats_point_bot, mat)
+end
+quant(u) = xseq[findfirst(u -> (u ≥ 0.1), cumsum(u))]
+pmats_bot10 = dropdims(mapslices(quant, pmat, dims=4), dims=4)
+
+
+
+## map estimates
+npzwrite("fitted_densities/map.npy", pmat_map)
+npzwrite("fitted_densities/map_q10.npy", pmats_point_bot[1])
+npzwrite("fitted_densities/map_q25.npy", pmats_point_bot[2])
+npzwrite("fitted_densities/map_q50.npy", pmats_point_bot[3])
+npzwrite("fitted_densities/map_q75.npy", pmats_point_bot[4])
+npzwrite("fitted_densities/map_tp18.npy", pmats_point_tp[1])
+npzwrite("fitted_densities/map_tp21.npy", pmats_point_tp[2])
+npzwrite("fitted_densities/map_tp32.npy", pmats_point_tp[3])
+npzwrite("fitted_densities/map_tp34.npy", pmats_point_tp[4])
+
+
+## bayesian
+
+pmat_examples = pmat[[tazmap[taz] for taz in example_tazs], :, :, :]
+# note: saving in logits reduces loss of precision in float16
+npzwrite("fitted_densities/examples_posterior_density_logits.npy", Float16.(log.(pmat_examples)))
+npzwrite("fitted_densities/posterior_q10.npy", Float16.(pmats_bot10))
+npzwrite("fitted_densities/posterior_tp21.npy", Float16.(pmats_tp21))
+
+## additional info
+open("fitted_densities/evaluation_points.csv", "w") do io
+    writedlm(io, xseq)
+end
+
+
+##
+example_info = DataFrame(
+    :name => example_ids,
+    :taz => example_tazs,
+    :row => [tazmap[i] for i in example_tazs]
+)
+CSV.write("fitted_densities/examples_info.csv", example_info)
+
+## Answers to some results in the paper
+
+# Bottom 10%?
+histogram(vec(pmats_point_bot[1]))
+mean(pmats_point_bot[1] .< 10.0)
+
+# Variatiblity in Exceeding living wage?
+minimum(pmats_point_tp[1])
+maximum(pmats_point_tp[1])

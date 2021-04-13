@@ -84,7 +84,7 @@ println("Fitting MAP model...")
 map_mod = BinomialGFEN(ptr, brks, lambdasl1, lambdasl2; modelopts...)
 @time converged = fit!(map_mod, s, a ; fitopts...)
 println("MAP estimate converged: $(converged)")
-println("Saving MAP estimate to $fname... in Float32")
+println("Saving MAP estimate to $fname... in Float16")
 open(fname, "w") do io
     writedlm(io, Float16.(map_mod.beta), ',')
 end
