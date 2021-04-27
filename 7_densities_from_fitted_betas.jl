@@ -25,7 +25,7 @@ example_ids = [
     "Pflugerville",
     "University",
     "Downtown",
-    "Red & 12th" 
+    "Red & 12th"
 ]
 example_tazs = [499, 201, 160, 362, 1951, 1898]
 
@@ -144,63 +144,68 @@ pmat ./= sum(pmat, dims=4)
 pmat_map = exp.(log_probs_map)
 pmat_map ./= sum(pmat_map, dims=3)
 
-pmat_median = mapslices(median, pmat, dims=3)
-pmat_median = dropdims(pmat_median, dims=3)
-pmat_median ./= sum(pmat_median, dims=3)
+npzwrite("fitted_densities/map.npy", pmat_map)
 
-pmat_q25 = mapslices(x -> quantile(x, 0.25), pmat, dims=3)
-pmat_q25 = dropdims(pmat_q25, dims=3)
-pmat_q25 ./= sum(pmat_q25, dims=3)
+# pmat_median = mapslices(median, pmat, dims=3)
+# pmat_median = dropdims(pmat_median, dims=3)
+# pmat_median ./= sum(pmat_median, dims=3)
 
-pmat_q75 = mapslices(x -> quantile(x, 0.75), pmat, dims=3)
-pmat_q75 = dropdims(pmat_q75, dims=3)
-pmat_q75 ./= sum(pmat_q75, dims=3)
+# pmat_q25 = mapslices(x -> quantile(x, 0.25), pmat, dims=3)
+# pmat_q25 = dropdims(pmat_q25, dims=3)
+# pmat_q25 ./= sum(pmat_q25, dims=3)
 
-pmat_q05 = mapslices(x -> quantile(x, 0.05), pmat, dims=3)
-pmat_q05 = dropdims(pmat_q05, dims=3)
-pmat_q05 ./= sum(pmat_q05, dims=3)
+# pmat_q75 = mapslices(x -> quantile(x, 0.75), pmat, dims=3)
+# pmat_q75 = dropdims(pmat_q75, dims=3)
+# pmat_q75 ./= sum(pmat_q75, dims=3)
 
-pmat_q95 = mapslices(x -> quantile(x, 0.95), pmat, dims=3)
-pmat_q95 = dropdims(pmat_q95, dims=3)
-pmat_q95 ./= sum(pmat_q95, dims=3)
+# pmat_q05 = mapslices(x -> quantile(x, 0.05), pmat, dims=3)
+# pmat_q05 = dropdims(pmat_q05, dims=3)
+# pmat_q05 ./= sum(pmat_q05, dims=3)
 
-pmat_iqr = pmat_q75 - pmat_q25
+# pmat_q95 = mapslices(x -> quantile(x, 0.95), pmat, dims=3)
+# pmat_q95 = dropdims(pmat_q95, dims=3)
+# pmat_q95 ./= sum(pmat_q95, dims=3)
 
-pmat_mean = mapslices(mean, pmat, dims=3)
-pmat_mean = dropdims(pmat_mean, dims=3)
-pmat_mean ./= sum(pmat_mean, dims=3)
+# pmat_iqr = pmat_q75 - pmat_q25
 
-means = sum(reshape(xseq, 1, 1, 1, :) .* pmat, dims=4)
-means = dropdims(means, dims=4)
+# pmat_mean = mapslices(mean, pmat, dims=3)
+# pmat_mean = dropdims(pmat_mean, dims=3)
+# pmat_mean ./= sum(pmat_mean, dims=3)
+
+# means = sum(reshape(xseq, 1, 1, 1, :) .* pmat, dims=4)
+# means = dropdims(means, dims=4)
+
+# ##
+# minimum(means)
+# maximum(means)
 
 ##
-minimum(means)
-maximum(means)
 
-##
-
-nid = 5
-t = 124
-taz = example_tazs[nid]
-posts = pmat[nid, t, :, :]'
-taznum = tazmap[taz]
-# p = plot(xseq, posts, c=:gray, alpha=0.2, label="", lw=2)
-p = plot(xseq, pmat_map[taznum, t, :], c=:blue, lw=2, alpha=0.5, lab="map")
-title!("$(example_ids[nid]) at time $t")
-xlabel!("productivity (dollar/hour)")
-ylabel!("density")
-up = (pmat_q95[nid, t, :] - pmat_median[nid, t, :])
-bot = (pmat_median[nid, t, :] - pmat_q05[nid, t, :])
-plot!(
-    p, xseq, pmat_median[nid, t, :];
-    ribbon=[up, bot], c=:red, lw=2, alpha=0.5, lab="median"
-)
-# plot!(p, xseq, pmat_mean[nid, t, :], c=:orange, lw=2, alpha=0.5)
-xlims!(0.0, 100.0)
+# nid = 5
+# t = 124
+# taz = example_tazs[nid]
+# posts = pmat[nid, t, :, :]'
+# taznum = tazmap[taz]
+# # p = plot(xseq, posts, c=:gray, alpha=0.2, label="", lw=2)
+# y = pmat_map[taznum, t, :]
+# δ = diff(xseq)
+# δ = [δ[1]; δ]
+# p = plot(xseq, y ./ δ, c=:blue, lw=2, alpha=0.5, lab="map")
+# title!("$(example_ids[nid]) at time $t")
+# xlabel!("productivity (dollar/hour)")
+# ylabel!("density")
+# up = (pmat_q95[nid, t, :] - pmat_median[nid, t, :])
+# bot = (pmat_median[nid, t, :] - pmat_q05[nid, t, :])
+# plot!(
+#     p, xseq, pmat_median[nid, t, :];
+#     ribbon=[up, bot], c=:red, lw=2, alpha=0.5, lab="median"
+# )
+# # plot!(p, xseq, pmat_mean[nid, t, :], c=:orange, lw=2, alpha=0.5)
+# xlims!(0.0, 100.0)
 
 ## where to obtain pointwise estimates from
 src = pmat_map
-src = pmat_median
+# src = pmat_median
 
 ##
 tail_quantities = [18.56, 21.64, 32.73, 34.74]
@@ -213,29 +218,54 @@ end
 tprob(u) = sum(ui for (ui, xi) in zip(u, xseq) if xi ≥ 21.64)
 pmats_tp21 = dropdims(mapslices(tprob, pmat, dims=4), dims=4)
 
-##
-bottoms = [0.1, 0.25, 0.5, 0.75]
-pmats_point_bot = []
-for lev in bottoms
-    quant(u) = xseq[findfirst(u -> (u ≥ lev), cumsum(u))]
-    mat = dropdims(mapslices(quant, src, dims=3), dims=3)
-    push!(pmats_point_bot, mat)
-end
-quant(u) = xseq[findfirst(u -> (u ≥ 0.1), cumsum(u))]
-pmats_bot10 = dropdims(mapslices(quant, pmat, dims=4), dims=4)
-
-
-
-## map estimates
-npzwrite("fitted_densities/map.npy", pmat_map)
-npzwrite("fitted_densities/map_q10.npy", pmats_point_bot[1])
-npzwrite("fitted_densities/map_q25.npy", pmats_point_bot[2])
-npzwrite("fitted_densities/map_q50.npy", pmats_point_bot[3])
-npzwrite("fitted_densities/map_q75.npy", pmats_point_bot[4])
 npzwrite("fitted_densities/map_tp18.npy", pmats_point_tp[1])
 npzwrite("fitted_densities/map_tp21.npy", pmats_point_tp[2])
 npzwrite("fitted_densities/map_tp32.npy", pmats_point_tp[3])
 npzwrite("fitted_densities/map_tp34.npy", pmats_point_tp[4])
+
+
+# Variatiblity in Exceeding living wage?
+minimum(pmats_point_tp[1])
+maximum(pmats_point_tp[1])
+
+
+pmats_point_tp = nothing
+pmats_tp21 = nothing
+npzwrite("fitted_densities/posterior_tp21.npy", Float16.(pmats_tp21))
+
+# ##
+bottoms = Float32.([0.1, 0.25, 0.5, 0.75])
+pmats_point_bot = []
+
+function dquant(u::AbstractVector{T}, lev::T)::T where {T<:AbstractFloat}
+    cprobs = cumsum(u)
+    ix = findfirst(u -> (u ≥ lev), cprobs)
+    y1 = cprobs[ix]
+    y0 = cprobs[ix - 1]
+    x1 = xseq[ix]
+    x0 = xseq[ix - 1]
+    m = (y1 - y0) / (x1 - x0)  # y = m * (x - x0) + y0
+    (lev - y0) / m + x0  # interpolate quantile
+end
+
+for lev in bottoms
+    mat = dropdims(mapslices(u -> dquant(u, lev), src, dims=3), dims=3)
+    push!(pmats_point_bot, mat)
+end
+
+pmats_bot10 = dropdims(mapslices(u -> dquant(u, 0.1f0), pmat, dims=4), dims=4)
+histogram(vec(pmats_point_bot[1]))
+mean(pmats_point_bot[1] .< 10.0)
+
+
+## map estimates
+
+npzwrite("fitted_densities/map_q10.npy", pmats_point_bot[1])
+npzwrite("fitted_densities/map_q25.npy", pmats_point_bot[2])
+npzwrite("fitted_densities/map_q50.npy", pmats_point_bot[3])
+npzwrite("fitted_densities/map_q75.npy", pmats_point_bot[4])
+npzwrite("fitted_densities/posterior_q10.npy", Float16.(pmats_bot10))
+
 
 
 ## bayesian
@@ -243,8 +273,7 @@ npzwrite("fitted_densities/map_tp34.npy", pmats_point_tp[4])
 pmat_examples = pmat[[tazmap[taz] for taz in example_tazs], :, :, :]
 # note: saving in logits reduces loss of precision in float16
 npzwrite("fitted_densities/examples_posterior_density_logits.npy", Float16.(log.(pmat_examples)))
-npzwrite("fitted_densities/posterior_q10.npy", Float16.(pmats_bot10))
-npzwrite("fitted_densities/posterior_tp21.npy", Float16.(pmats_tp21))
+
 
 ## additional info
 open("fitted_densities/evaluation_points.csv", "w") do io
@@ -259,13 +288,3 @@ example_info = DataFrame(
     :row => [tazmap[i] for i in example_tazs]
 )
 CSV.write("fitted_densities/examples_info.csv", example_info)
-
-## Answers to some results in the paper
-
-# Bottom 10%?
-histogram(vec(pmats_point_bot[1]))
-mean(pmats_point_bot[1] .< 10.0)
-
-# Variatiblity in Exceeding living wage?
-minimum(pmats_point_tp[1])
-maximum(pmats_point_tp[1])

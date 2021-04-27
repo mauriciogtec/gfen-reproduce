@@ -1,0 +1,663 @@
+---
+title: "Paper plots"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(reticulate)
+library(reshape2)
+library(sf)
+library(cowplot)
+library(collections)
+library(ggmap)
+library(viridis)
+```
+
+Load data from selected sites:
+
+| ID  | Location     | TAZ  |
+|-----|--------------|------|
+| A   | Airport      | 499  |
+| B   | Downtown     | 1951 |
+| C   | University   | 362  |
+| D   | Red & 12th   | 1898 |
+| E   | Pflugerville | 160  |
+| F   | The Domain   | 201  |
+
+```{r}
+sites = read_csv("./fitted_densities/examples_info.csv") %>% 
+  rename(site_name=name) %>%
+  mutate(site_num=1:6) %>%
+  arrange(site_num) %>% 
+  mutate(site_name=paste0("(", LETTERS[1:6][c(1, 6, 5, 3, 2, 4)], ") ", site_name))
+
+evalpts = scan("./fitted_densities/evaluation_points.csv")
+delta = c(evalpts[2] - evalpts[1], diff(evalpts))
+midpts = c(evalpts[1], 0.5 * (evalpts[-1] + evalpts[-length(evalpts)]))
+
+taz <- read_sf("./raw_data/shapefiles/TAZs.shp")
+vertexinfo_full = read_csv("./processed_data/vertex_data.csv")
+vertexinfo = vertexinfo_full %>% 
+  filter(taz %in% sites$taz)
+sites
+```
+
+```{r}
+# load probability distributions and transform to densities
+
+np = import("numpy")
+chain_logits = np$load("./fitted_densities/examples_posterior_density_logits.npy")
+chain = exp(chain_logits)
+chain_d = chain
+for (k in 1:dim(chain)[3])
+  for (j in 1:dim(chain)[2])
+    for (i in 1:dim(chain)[1]) {
+      chain[i, j, k, ] = chain[i, j, k, ] / sum(chain[i, j, k, ])
+      chain_d[i, j, k, ] = chain[i, j, k, ] / delta
+    }
+
+bmap = np$load("./fitted_densities/map.npy")[sites$row, , ]
+bmap_d = bmap
+for (j in 1:dim(bmap)[2])
+  for (i in 1:dim(bmap)[1])
+    bmap_d[i, j, ] = bmap_d[i, j, ] / delta
+
+q50 = apply(chain_d, c(1,2,4), median)
+q05 = apply(chain_d, c(1,2,4), quantile, 0.05)
+q95 = apply(chain_d, c(1,2,4), quantile, 0.95)
+
+# adjust sum to one for the median?
+# for (j in 1:dim(q50)[2])
+#   for (i in 1:dim(q50)[1]) {
+#     C = sum(q50[i, j, ])
+#     q50[i, j, ] = q50[i, j, ] / C
+#     q05[i, j, ] = q05[i, j, ] / C
+#     q95[i, j, ] = q95[i, j, ] / C
+#   }
+```
+
+```{r}
+wdays = c("Sun", "Mon", "Tu", "Wed", "Th", "Fr", "Sat")
+hours = paste0(
+  ifelse(0:23 %% 12 == 0, 12, 0:23 %% 12),
+  ifelse(1:24 <= 12, "AM", "PM")
+)
+days_enum = wdays[(0:167 %/% 24) + 1]
+hours_enum = hours[(0:167 %% 24) + 1]
+timelabels = paste(days_enum, hours_enum)
+```
+
+```{r}
+chaindf = melt(chain_d)
+names(chaindf) = c("site_num", "time_num", "sim_num", "x_num", "prob")
+chaindf = chaindf %>% 
+  mutate(
+    evalpt = evalpts[x_num],
+    time=ordered(timelabels[time_num], levels=timelabels)
+  )%>% 
+  left_join(sites, by="site_num")
+
+bmapdf = melt(bmap_d)
+names(bmapdf) = c("site_num", "time_num", "x_num", "prob")
+bmapdf = bmapdf %>% 
+  mutate(
+    evalpt = evalpts[x_num], type = "MAP",
+    time=ordered(timelabels[time_num], levels=timelabels)
+  ) %>% 
+  left_join(sites, by="site_num")
+
+q95df = melt(q95)
+names(q95df) = c("site_num", "time_num", "x_num", "prob")
+q95df = q95df %>% 
+  mutate(
+    evalpt = evalpts[x_num], type = "95%",
+    time=ordered(timelabels[time_num], levels=timelabels)
+  ) %>% 
+  left_join(sites, by="site_num") %>% 
+  rename(prob_q95=prob)
+
+q05df = melt(q05)
+names(q05df) = c("site_num", "time_num", "x_num", "prob")
+q05df = q05df %>% 
+  mutate(
+    evalpt = evalpts[x_num], type = "5%",
+    time=ordered(timelabels[time_num], levels=timelabels)
+  )%>% 
+  left_join(sites, by="site_num") %>% 
+  rename(prob_q05=prob)
+
+q50df = melt(q50)
+names(q50df) = c("site_num", "time_num", "x_num", "prob")
+q50df = q50df %>% 
+  mutate(
+    evalpt = evalpts[x_num], type = "50%",
+    time=ordered(timelabels[time_num], levels=timelabels)
+  ) %>% 
+  left_join(sites, by="site_num")
+
+```
+
+```{r}
+bmap_means = melt(bmap)
+names(bmap_means) = c("site_num", "time_num", "x_num", "prob")
+bmap_means = bmap_means %>% 
+  mutate(
+    evalpt = evalpts[x_num],
+    midpts = midpts[x_num],
+    type = "MAP",
+    time=ordered(timelabels[time_num], levels=timelabels)
+  ) %>% 
+  left_join(sites, by="site_num") %>% 
+  group_by(site_name, site_num, time, time_num) %>%
+  summarize(m=sum(prob * midpts), .groups="drop")
+```
+
+Dataframe with counts.
+
+```{r}
+countlabs = vertexinfo %>% 
+  filter(taz %in% sites$taz) %>% 
+  rename(time_num=hour) %>% 
+  left_join(select(sites, taz, site_num, site_name), by="taz") %>% 
+  mutate(
+    iszero = node_counts==0,
+    x=80,
+    y=0.055,
+    lab=paste0("n=", node_counts),
+    time=ordered(timelabels[time_num], levels=timelabels),
+    wday = ordered(wdays[(time_num - 1) %/% 24 + 1], levels=wdays),
+    hour = ordered(hours[(time_num - 1) %% 24 + 1], levels=hours)
+  )
+```
+
+## Densities
+
+Global mean
+
+```{r}
+global_dens = chaindf %>%
+  group_by(evalpt) %>%
+  summarize(prob=exp(mean(log(prob))), .groups="drop")
+```
+
+
+### Intro examples
+
+```{r, fig.width=6, fig.height=3.5}
+src = bmapdf
+# src = q50df
+src = src %>%
+  left_join(
+    select(q95df, site_num, time_num, x_num, prob_q95),
+    by=c("site_num", "time_num", "x_num")
+  ) %>%
+  left_join(
+    select(q05df, site_num, time_num, x_num, prob_q05),
+    by=c("site_num", "time_num", "x_num")
+  ) %>%
+  filter(site_num %in% c(1, 5, 3, 4, 6), time_num %in% c(1, 35))
+
+
+means = bmap_means %>%
+  filter(site_num %in% c(1, 5, 3, 4, 6), time_num %in% c(1, 35)) %>%
+  mutate(lty="distribution mean")
+
+p = ggplot(src) +
+  geom_ribbon(
+    aes(x=evalpt, ymin=prob_q05, ymax=prob_q95), alpha=0.5
+  ) +
+  geom_line(aes(x=evalpt, y=prob)) +
+  geom_area(aes(x=evalpt, y=prob, fill=site_name), alpha=0.25) +
+  geom_vline(aes(xintercept=m, linetype=lty), data=means, col="red") +
+  geom_text(
+    aes(x=x, y=y, label=lab, color=iszero),
+    data=filter(countlabs, site_num  %in% c(1, 5, 3, 4, 6), time_num %in% c(1, 35)),
+    size=3,
+    show.legend=FALSE
+  ) +
+  geom_line(aes(x=evalpt, y=prob), lty=2, data=global_dens) +
+  scale_color_manual(values=c("black", "red")) +
+  facet_grid(time ~ site_name) +
+  scale_linetype_manual(values=2) +
+  theme_minimal_grid() +
+  labs(x="Productivity ($/hour)", y="Density", linetype="") +
+  guides(fill=FALSE, linetype=FALSE) +
+  scale_fill_brewer(palette="Set3") +
+  xlim(0, 100)
+ggsave("figures/examples_with_posterior.pdf", p, width=9, height=3.5, unit="in", dpi=100)
+p
+```
+
+Estimate probability quotes from paper.
+
+Probability of less than 20 dollars.
+
+```{r}
+chaindf %>% 
+  filter(site_num %in% c(1, 5, 3, 4, 6), time_num %in% c(1, 35))  %>% 
+  filter(evalpt < 20) %>% 
+  group_by(site_num, time_num, sim_num) %>% 
+  summarize(prob=sum(prob)) %>% 
+  ungroup() %>% 
+  group_by(site_num, time_num) %>% 
+  summarize(q05=quantile(prob, 0.05), q95=quantile(prob, 0.95))
+```
+```{r}
+src %>% 
+  ungroup() %>% 
+  filter(evalpt < 20) %>% 
+  group_by(site_num, time_num) %>% 
+  summarize(prob=sum(prob))
+  
+```
+
+
+### Airport 2-hour cycle
+
+
+Airport every 2 hours
+
+```{r, fig.width=8, fig.height=7}
+src = bmapdf
+# src = q50df
+src = src %>% 
+  left_join(
+    select(q95df, site_num, time_num, x_num, prob_q95),
+    by=c("site_num", "time_num", "x_num")
+  ) %>% 
+  left_join(
+    select(q05df, site_num, time_num, x_num, prob_q05),
+    by=c("site_num", "time_num", "x_num")
+  ) %>% 
+  filter(site_num == 1, time_num %in% seq(1, 168, by=2)) %>% 
+  mutate(
+    wday = ordered(wdays[(time_num - 1) %/% 24 + 1], levels=wdays),
+    hour = ordered(hours[(time_num - 1) %% 24 + 1], levels=hours)
+  )
+
+p = ggplot(src) +
+  geom_ribbon(
+    aes(x=evalpt, ymin=prob_q05, ymax=prob_q95), alpha=0.5
+  ) +
+  geom_line(aes(x=evalpt, y=prob), lty=2, data=global_dens) +
+  geom_line(aes(x=evalpt, y=prob)) +
+  geom_area(aes(x=evalpt, y=prob, fill=wday), alpha=0.25) +
+  geom_text(
+    aes(x=x, y=y, label=lab, color=iszero),
+    data=filter(
+      countlabs, site_num == 1, time_num %in% seq(1, 168, by=2)
+    ),
+    size=3,
+    show.legend=FALSE
+  ) +
+  facet_grid(hour ~ wday) +
+  scale_linetype_manual(values=2) +
+  scale_color_manual(values=c("black", "red")) +
+  theme_minimal_vgrid() +
+  labs(x="Productivity ($/hour)", y="Density", linetype="") +
+  guides(fill=FALSE, linetype=FALSE) +
+  scale_fill_brewer(palette="Set3") +
+  xlim(0, 100) +
+  theme(
+    axis.text = element_text(size=8),
+    strip.text = element_text(size=10),
+    axis.title = element_text(size=10)
+  )
+ggsave("figures/airport_cycle.pdf", dpi=100, p, width=8, height=7, unit="in")
+p
+```
+
+### Locations 12-hour cycle
+
+```{r, fig.width=7, fig.height=7}
+src = bmapdf
+# src = q50df
+src = src %>% 
+  left_join(
+    select(q95df, site_num, time_num, x_num, prob_q95),
+    by=c("site_num", "time_num", "x_num")
+  ) %>% 
+  left_join(
+    select(q05df, site_num, time_num, x_num, prob_q05),
+    by=c("site_num", "time_num", "x_num")
+  ) %>% 
+  filter(time_num %in% seq(1, 168, by=12)) %>% 
+  mutate(
+    wday = ordered(wdays[(time_num - 1) %/% 24 + 1], levels=wdays),
+    hour = ordered(hours[(time_num - 1) %% 24 + 1], levels=hours)
+  ) %>% 
+  filter(site_num != 2)
+
+p = ggplot(src) +
+  geom_ribbon(
+    aes(x=evalpt, ymin=prob_q05, ymax=prob_q95), alpha=0.5
+  ) +
+  geom_line(aes(x=evalpt, y=prob), lty=2, data=global_dens) +
+  geom_line(aes(x=evalpt, y=prob)) +
+  geom_area(aes(x=evalpt, y=prob, fill=site_name), alpha=0.25) +
+  geom_text(
+    aes(x=x, y=y, label=lab, color=iszero),
+    data=filter(countlabs, time_num %in% seq(1, 168, by=12), site_num != 2),
+    size=3,
+    show.legend=FALSE
+  ) +
+  facet_grid(time ~ site_name) +
+  scale_color_manual(values=c("black", "red")) +
+  scale_linetype_manual(values=2) +
+  theme_minimal_vgrid() +
+  labs(x="Productivity ($/hour)", y="Density", linetype="") +
+  guides(fill=FALSE, linetype=FALSE) +
+  scale_fill_brewer(palette="Set3") +
+  xlim(0, 100) +
+  theme(
+    axis.text = element_text(size=8),
+    strip.text = element_text(size=8),
+    axis.title = element_text(size=10),
+    strip.text.y = element_text(angle=0)
+  )
+ggsave("figures/sites_cycle.pdf", dpi=100, p, width=6, height=7, unit="in")
+p
+```
+
+## Maps
+
+```{r}
+bbox = c(left=-97.84, bottom=30.175, right=-97.59, top=30.39)
+austinmap = get_stamenmap(bbox, maptype="toner", zoom=12)
+```
+
+```{r, fig.width=8, fig.height=8}
+ggmap(austinmap)
+```
+
+### Probability of exceeding a probability
+
+```{r}
+tplevels = c(18, 21, 32, 34)
+times = c(1, 35)
+
+for (tplevel in tplevels) {
+  tpmap = np$load(sprintf("./fitted_densities/map_tq%s.npy", tplevel)) %>% 
+    melt() %>% 
+    `names<-`(c("site_num", "time_num", "value")) %>%
+    mutate(time=ordered(timelabels[time_num], levels=timelabels)) %>% 
+    bind_cols(vertexinfo_full) %>%
+    filter(time_num %in% times)
+
+  min_val = round(min(tpmap$value), 2) - 0.01
+  max_val = round(max(tpmap$value), 2) + 0.01
+  
+  for (t in times) {
+    tpmap_sub = tpmap %>%
+      filter(time_num == t)
+    taz_sub = left_join(
+      taz,
+      select(tpmap_sub, taz, value),
+      by=c("TAZ"="taz")
+    )
+    
+    g = ggmap(austinmap, darken = c(0.3, "white")) +
+      coord_sf(crs = st_crs(3857)) + # force the ggplot2 map to be in 3857
+      geom_sf(
+        aes(fill=value),
+        lwd=0.01,
+        size=0,
+        color=NA,
+        alpha=0.7,
+        data=taz_sub,
+        inherit.aes = FALSE
+      ) +
+      theme(
+        axis.title = element_blank(),
+        legend.title = element_text(size=8),
+        legend.text = element_text(size=7),
+        axis.text = element_text(size=7),
+        plot.margin=grid::unit(c(0,0,0,0), "mm")
+      ) +
+      guides(fill = guide_legend(override.aes = list(alpha = 0.7))) +
+      scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10) +
+      labs(fill="Probability")
+    
+    fname = sprintf("figures/tp%s_map%02d.pdf", tplevel, t)
+    ggsave(fname, g, height=4, width=5, units="in")
+  }
+}
+```
+
+```{r}
+# show last plot
+last_plot()
+```
+
+Show the uncertainty over the estimation of t21
+
+
+```{r}
+tpmap = np$load("./fitted_densities/posterior_tq21.npy")
+upper = apply(tpmap, c(1, 2), quantile, 0.95)
+bottom = apply(tpmap, c(1, 2), quantile, 0.05)
+iqr21 = (upper - bottom) %>% 
+  melt() %>% 
+  `names<-`(c("site_num", "time_num", "value")) %>%
+  mutate(time=ordered(timelabels[time_num], levels=timelabels)) %>%
+  bind_cols(vertexinfo_full) %>% 
+  filter(time_num %in% times)
+```
+
+```{r}
+min_val = round(min(iqr21$value), 4) - 0.0001
+max_val = 0.0701 # round(max(iqr21$value), 3) + 0.001
+
+for (t in times) {
+  iqr_sub = iqr21 %>%
+    filter(time_num == t) %>% 
+    mutate(value = pmax(value, pmin(value, max_val - 0.0001)))
+  taz_sub = left_join(
+    taz,
+    select(iqr_sub, taz, value),
+    by=c("TAZ"="taz")
+  )
+  
+  g = ggmap(austinmap, darken = c(0.3, "white")) +
+    coord_sf(crs = st_crs(3857)) + # force the ggplot2 map to be in 3857
+    geom_sf(
+      aes(fill=value),
+      lwd=0.01,
+      size=0,
+      color=NA,
+      alpha=0.7,
+      data=taz_sub,
+      inherit.aes = FALSE
+    ) +
+    theme(
+      axis.title = element_blank(),
+      legend.title = element_text(size=8),
+      legend.text = element_text(size=7),
+      axis.text = element_text(size=7),
+      plot.margin=grid::unit(c(0,0,0,0), "mm")
+    ) +
+    guides(fill = guide_legend(override.aes = list(alpha = 0.7))) +
+    scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10) +
+    labs(fill="\nTail proba.\nposterior\nuncertainty\n\n[5%,95%]")
+  
+  fname = sprintf("figures/tp21_uncertainty%02d.pdf", t)
+  ggsave(fname, g, height=4, width=5, units="in")
+}
+```
+
+```{r}
+last_plot()
+```
+
+### Quantiles
+
+```{r}
+plevels = c(10, 25, 50, 75)
+times = c(1, 35)
+
+for (plevel in plevels) {
+  qmap = np$load(sprintf("./fitted_densities/map_q%s.npy", plevel)) %>% 
+    melt() %>% 
+    `names<-`(c("site_num", "time_num", "value")) %>%
+    mutate(time=ordered(timelabels[time_num], levels=timelabels)) %>% 
+    bind_cols(vertexinfo_full) %>%
+    filter(time_num %in% times)
+
+  min_val = round(min(qmap$value), 2) - 0.01
+  max_val = round(max(qmap$value), 2) + 0.01
+  
+  for (t in times) {
+    qmap_sub = qmap %>%
+      filter(time_num == t)
+    taz_sub = left_join(
+      taz,
+      select(qmap_sub, taz, value),
+      by=c("TAZ"="taz")
+    )
+    
+    g = ggmap(austinmap, darken = c(0.3, "white")) +
+      coord_sf(crs = st_crs(3857)) + # force the ggplot2 map to be in 3857
+      geom_sf(
+        aes(fill=value),
+        lwd=0.01,
+        size=0,
+        color=NA,
+        alpha=0.7,
+        data=taz_sub,
+        inherit.aes = FALSE
+      ) +
+      theme(
+        axis.title = element_blank(),
+        legend.title = element_text(size=8),
+        legend.text = element_text(size=7),
+        axis.text = element_text(size=7),
+        plot.margin=grid::unit(c(0,0,0,0), "mm")
+      ) +
+      guides(fill = guide_legend(override.aes = list(alpha = 0.7))) +
+      scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10) +
+      labs(fill="Productivity")
+    
+    fname = sprintf("figures/q%s_map%02d.pdf", plevel, t)
+    ggsave(fname, g, height=4, width=5, units="in")
+  }
+}
+```
+
+```{r}
+last_plot()
+```
+
+Show the uncertainty over the estimation of q10
+
+```{r}
+qmap = np$load("./fitted_densities/posterior_q10.npy")
+upper = apply(qmap, c(1, 2), quantile, 0.95)
+bottom = apply(qmap, c(1, 2), quantile, 0.05)
+iqr10 = (upper - bottom) %>% 
+  melt() %>% 
+  `names<-`(c("site_num", "time_num", "value")) %>%
+  mutate(time=ordered(timelabels[time_num], levels=timelabels)) %>%
+  bind_cols(vertexinfo_full) %>% 
+  filter(time_num %in% times)
+```
+
+```{r}
+min_val = min(iqr10$value)
+max_val = round(max(iqr10$value), 2) + 0.1
+
+for (t in times) {
+  iqr_sub = iqr10 %>%
+    filter(time_num == t) %>% 
+    mutate(value = pmax(value, pmin(value, max_val - 0.0001)))
+  taz_sub = left_join(
+    taz,
+    select(iqr_sub, taz, value),
+    by=c("TAZ"="taz")
+  )
+  
+  g = ggmap(austinmap, darken = c(0.3, "white")) +
+    coord_sf(crs = st_crs(3857)) + # force the ggplot2 map to be in 3857
+    geom_sf(
+      aes(fill=value),
+      lwd=0.01,
+      size=0,
+      color=NA,
+      alpha=0.7,
+      data=taz_sub,
+      inherit.aes = FALSE
+    ) +
+    theme(
+      axis.title = element_blank(),
+      legend.title = element_text(size=8),
+      legend.text = element_text(size=7),
+      axis.text = element_text(size=7),
+      plot.margin=grid::unit(c(0,0,0,0), "mm")
+    ) +
+    guides(fill = guide_legend(override.aes = list(alpha = 0.7))) +
+    scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10) +
+    labs(fill="Productivity\nposterior\nuncertainty\n[5%,95%]")
+  
+  fname = sprintf("figures/quantile_uncertainty%02d.pdf", t)
+  ggsave(fname, g, height=4, width=5, units="in")
+}
+```
+
+```{r}
+last_plot()
+```
+
+
+## Variability
+
+```{r}
+
+mapq75 = np$load("./fitted_densities/map_q75.npy")
+mapq25 = np$load("./fitted_densities/map_q25.npy")
+mapiqr = mapq75 - mapq25
+                      
+mapiqr = mapiqr %>% 
+    melt() %>% 
+    `names<-`(c("site_num", "time_num", "value")) %>%
+    mutate(time=ordered(timelabels[time_num], levels=timelabels)) %>% 
+    bind_cols(vertexinfo_full) %>%
+    filter(time_num %in% times)
+
+  min_val = round(min(mapiqr$value), 2) - 0.01
+  max_val = round(max(mapiqr$value), 2) + 0.01
+  
+  for (t in times) {
+    mapiqr_sub = mapiqr %>%
+      filter(time_num == t)
+    taz_sub = left_join(
+      taz,
+      select(mapiqr_sub, taz, value),
+      by=c("TAZ"="taz")
+    )
+    
+    g = ggmap(austinmap, darken = c(0.3, "white")) +
+      coord_sf(crs = st_crs(3857)) + # force the ggplot2 map to be in 3857
+      geom_sf(
+        aes(fill=value),
+        lwd=0.01,
+        size=0,
+        color=NA,
+        alpha=0.7,
+        data=taz_sub,
+        inherit.aes = FALSE
+      ) +
+      theme(
+        axis.title = element_blank(),
+        legend.title = element_text(size=8),
+        legend.text = element_text(size=7),
+        axis.text = element_text(size=7),
+        plot.margin=grid::unit(c(0,0,0,0), "mm")
+      ) +
+      guides(fill = guide_legend(override.aes = list(alpha = 0.7))) +
+      scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10) +
+      labs(fill="Range ($/hour)\n75%-25%")
+    
+    fname = sprintf("figures/mapiqr_%02d.pdf", t)
+    ggsave(fname, g, height=4, width=5, units="in")
+  }
+```
