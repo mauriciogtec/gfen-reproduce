@@ -17,6 +17,12 @@ Random.seed!(138590)
 
 println("Running with $(Threads.nthreads())")
 
+debug = false
+if debug
+    runid = 0
+else
+    runid =  parse(Int, ENV["SLURM_PROCID"])
+end
 
 # %%
 function generate_trace(task, N)
@@ -139,7 +145,7 @@ function generate_cvsets(y, nsplits)
     end
     return cvsets
 end
-               
+
 
 
 function fit2(ytrain, ptr, brks, λ1, λ2, η1, η2, istemporal; parallel=false)
@@ -150,18 +156,18 @@ function fit2(ytrain, ptr, brks, λ1, λ2, η1, η2, istemporal; parallel=false)
 
     modelopts = Dict{Symbol, Any}(
         :admm_balance_every => 20,
-        :admm_init_penalty => 1.0,
+        :admm_init_penalty => 10.0,
         :admm_residual_balancing => true,
         :admm_adaptive_inflation => false,
         :reltol => 1e-2,
-        :admm_min_penalty => 0.5,
+        :admm_min_penalty => 0.1,
         :admm_max_penalty => 32.0,
         :abstol => 1e-6,
         :save_norms => false,
         :save_loss => false
     )
     fitopts = Dict{Symbol, Any}(
-        :walltime => 120.0,
+        :walltime => 60.0,
         :parallel => parallel
     )
    
@@ -180,9 +186,12 @@ function fit2(ytrain, ptr, brks, λ1, λ2, η1, η2, istemporal; parallel=false)
     end
     splits, betas
 end
-         
+
                 
 function cv_fit2(y, evalpts, ptr, brks, istemporal, lambdas, cvsets, models)
+    # override only one cvsplit
+    nsplits = 1
+
     # for each cv split get the mse error
     num_nodes = length(y)
     nsplits = length(cvsets)
@@ -229,7 +238,7 @@ function cv_fit2(y, evalpts, ptr, brks, istemporal, lambdas, cvsets, models)
     lows, mids, ups = splits.lows, splits.mids, splits.ups
 
     lls = zeros(num_nodes)
-    @threads for i in 1:num_nodes
+    for i in 1:num_nodes
         beta = betas[:, i]
         root = make_tree_from_bfs(lows, mids, ups, beta)
         ll = mean([-eval_logdens(root, yᵢ) for yᵢ in samples[i]])
@@ -241,13 +250,15 @@ function cv_fit2(y, evalpts, ptr, brks, istemporal, lambdas, cvsets, models)
                 "cv_nloglikelihood" => best_nloglikelihood,
                 "val_nloglikelihood" => validation_nloglikelihood)
 end
-            
+
 function get_hypers(method)
     lambdas_dict = Dict(
-        "fl" => [(l, 1e-12) for l in range(1e-12, 3.0, length=20)],
-        "kal" => [(1e-12, 10.0^x) for x in range(-3.0, 1.5, length=20)],
-        "enet" => [(l1, 10.0^x) for l1 in range(1e-12, 3.0, length=10)
-                                for x in range(-3.0, 1.5, length=10)]) 
+        "fl" => [(10^l, 1e-12) for l in range(-2, log10(5.0), length=20)],
+        "kal" => [(1e-12, 10^x) for x in range(-2, log10(5.0), length=20)],
+        "enet" => [
+            (10^l1, 10.0^x) for l1 in range(-2, log10(5.0), length=10) for x in range(-2, log10(5.0), length=10)
+        ]
+    ) 
     ls = lambdas_dict[method]
     hypers = [(λ1, λ2, η1, η2) for (λ1, λ2) in ls for (η1, η2) in ls]
     # if method == "enet"
@@ -258,7 +269,7 @@ function get_hypers(method)
     M = 10
     return rand(hypers, M)
 end
-           
+
 ##
 
 function run_benchmarks(N, pmiss;
@@ -269,15 +280,11 @@ function run_benchmarks(N, pmiss;
     experiment_results = []
     for task_space in tasks
         for task_time in tasks
-            data = [
-                generate_spt_task(task_space, task_time, N, pmiss, outliers=outliers)
-                for _ in 1:nsims
-            ]
             for method in ("fl", "kal", "enet")
                 println("Running task_space $task_space task_time $task_time for method $method, outliers $outliers")
                 
-                pbar = Progress(length(data))
-                for (l, D) in enumerate(data)
+                for l in 1:nsims
+                    D = generate_spt_task(task_space, task_time, N, pmiss, outliers=outliers)
                     y = vec(D["y"])
                     models = vec(D["dmodels"])
                     ndata = vec(D["ndata"])
@@ -288,7 +295,7 @@ function run_benchmarks(N, pmiss;
                     istemporal = D["istemporal"]
                     
                     cvsets = generate_cvsets(y, nsplits)
-                    
+
                     lambdas = get_hypers(method)
                     results = cv_fit2(y, evalpts, ptr, brks, istemporal, lambdas, cvsets, models)
 
@@ -300,7 +307,6 @@ function run_benchmarks(N, pmiss;
                         :cv_nloglikelihood => results["cv_nloglikelihood"],
                         :val_nloglikelihood => results["val_nloglikelihood"])
                     push!(experiment_results, new_result)
-                    next!(pbar)
                 end
             end
         end
@@ -349,9 +355,9 @@ tosave = Dict(
 
 ##
 # %%
-N = 30
+N = 1
 pmiss = 0.8
-nsims = 10
+nsims = 2
 tasks = ("smooth", "constant", "mixed")
 
 experiment_results = run_benchmarks(N, pmiss, nsims=nsims, tasks=tasks)
@@ -368,5 +374,7 @@ df = DataFrame(experiment = Int[],
 for record in [experiment_results; experiment_results_out]
     push!(df, record)
 end
+df.runid = fill(runid, size(df, 1))
 
-CSV.write("simulations/benchmarks/results-spt.csv", df)
+fname = @sprintf("simulations/benchmarks/results-spt-%03d.csv", runid)
+CSV.write(fname, df)
