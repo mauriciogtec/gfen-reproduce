@@ -15,7 +15,7 @@ using GraphFusedElasticNet
 using Plots
 
 ##
-eval_samples_at_examples_only = false
+eval_samples_at_examples_only = true
 
 
 # tazs of interest
@@ -32,7 +32,7 @@ example_tazs = [499, 201, 160, 362, 1951, 1898]
 # key, val = zip(collect(siteids)...)
 
 ##
-splits = readtable("processed_data/splits_opt_pt.csv")
+splits = readtable("processed_data/splits_qua.csv")
 vertexinfo = readtable("processed_data/vertex_data.csv")
 num_nodes = size(vertexinfo, 1)
 num_splits = size(splits, 1)
@@ -62,6 +62,7 @@ num_sites_samples = length(tazs_samples)
 
 maps = zeros(Float32, num_sites, num_times, num_splits)
 samples = zeros(Float32, num_sites_samples, num_times, num_samples, num_splits)
+# samples = samples[:, :, 1:50, :]
 
 println("Extracting data from saved estimates...")
 pbar = Progress(num_splits)
@@ -108,7 +109,7 @@ pbar = Progress(num_sites)
 @threads for i in 1:num_sites
     for t in 1:num_times
         betas = maps[i, t, :]
-        root = make_tree_from_bfs(lows, mid, ups, betas)
+        root = make_tree(lows, mid, ups, betas)
         for j in 1:N
             if support[1] ≤ xseq[j] ≤ support[2]
                 log_probs_map[i, t, j] = eval_logprob(root, xseq[j])
@@ -125,7 +126,7 @@ pbar = Progress(num_sites_samples)
     for t in 1:num_times
         for s in 1:num_samples
             betas = samples[i, t, s, :]
-            root = make_tree_from_bfs(lows, mid, ups, betas)
+            root = make_tree(lows, mid, ups, betas)
             for j in 1:N
                 if support[1] ≤ xseq[j] ≤ support[2]
                     log_probs[i, t, s, j] = eval_logprob(root, xseq[j])
@@ -136,10 +137,11 @@ pbar = Progress(num_sites_samples)
     next!(pbar)
 end # not necessary anymore
 
-##
-
 pmat = exp.(log_probs)
+log_probs = nothing
 pmat ./= sum(pmat, dims=4)
+
+#
 
 pmat_map = exp.(log_probs_map)
 pmat_map ./= sum(pmat_map, dims=3)
@@ -207,7 +209,7 @@ npzwrite("fitted_densities/map.npy", pmat_map)
 src = pmat_map
 # src = pmat_median
 
-##
+# ##
 tail_quantities = [18.56, 21.64, 32.73, 34.74]
 pmats_point_tp = []
 for tq in tail_quantities
@@ -216,12 +218,13 @@ for tq in tail_quantities
     push!(pmats_point_tp, mat)
 end
 tprob(u) = sum(ui for (ui, xi) in zip(u, xseq) if xi ≥ 21.64)
-pmats_tp21 = dropdims(mapslices(tprob, pmat, dims=4), dims=4)
+# pmats_tp21 = dropdims(mapslices(tprob, pmat, dims=4), dims=4)
 
 npzwrite("fitted_densities/map_tp18.npy", pmats_point_tp[1])
 npzwrite("fitted_densities/map_tp21.npy", pmats_point_tp[2])
 npzwrite("fitted_densities/map_tp32.npy", pmats_point_tp[3])
 npzwrite("fitted_densities/map_tp34.npy", pmats_point_tp[4])
+# npzwrite("fitted_densities/posterior_tp21.npy", Float16.(pmats_tp21))
 
 
 # Variatiblity in Exceeding living wage?
@@ -229,9 +232,8 @@ minimum(pmats_point_tp[1])
 maximum(pmats_point_tp[1])
 
 
-pmats_point_tp = nothing
-pmats_tp21 = nothing
-npzwrite("fitted_densities/posterior_tp21.npy", Float16.(pmats_tp21))
+# pmats_point_tp = nothing
+# pmats_tp21 = nothing
 
 # ##
 bottoms = Float32.([0.1, 0.25, 0.5, 0.75])
@@ -241,11 +243,15 @@ function dquant(u::AbstractVector{T}, lev::T)::T where {T<:AbstractFloat}
     cprobs = cumsum(u)
     ix = findfirst(u -> (u ≥ lev), cprobs)
     y1 = cprobs[ix]
-    y0 = cprobs[ix - 1]
     x1 = xseq[ix]
-    x0 = xseq[ix - 1]
-    m = (y1 - y0) / (x1 - x0)  # y = m * (x - x0) + y0
-    (lev - y0) / m + x0  # interpolate quantile
+    if ix > 0
+        y0 = cprobs[ix - 1]
+        x0 = xseq[ix - 1]
+        m = (y1 - y0) / (x1 - x0)  # y = m * (x - x0) + y0
+        return (lev - y0) / m + x0  # interpolate quantile
+    else
+        return xseq[1]
+    end
 end
 
 for lev in bottoms
@@ -253,8 +259,8 @@ for lev in bottoms
     push!(pmats_point_bot, mat)
 end
 
-pmats_bot10 = dropdims(mapslices(u -> dquant(u, 0.1f0), pmat, dims=4), dims=4)
-histogram(vec(pmats_point_bot[1]))
+# pmats_bot10 = dropdims(mapslices(u -> dquant(u, 0.1f0), pmat, dims=4), dims=4)
+# histogram(vec(pmats_point_bot[1]))
 mean(pmats_point_bot[1] .< 10.0)
 
 
@@ -264,13 +270,16 @@ npzwrite("fitted_densities/map_q10.npy", pmats_point_bot[1])
 npzwrite("fitted_densities/map_q25.npy", pmats_point_bot[2])
 npzwrite("fitted_densities/map_q50.npy", pmats_point_bot[3])
 npzwrite("fitted_densities/map_q75.npy", pmats_point_bot[4])
-npzwrite("fitted_densities/posterior_q10.npy", Float16.(pmats_bot10))
+# npzwrite("fitted_densities/posterior_q10.npy", Float16.(pmats_bot10))
 
 
 
 ## bayesian
-
-pmat_examples = pmat[[tazmap[taz] for taz in example_tazs], :, :, :]
+if eval_samples_at_examples_only
+    pmat_examples = pmat
+else
+    pmat_examples = pmat[[tazmap[taz] for taz in example_tazs], :, :, :]
+end
 # note: saving in logits reduces loss of precision in float16
 npzwrite("fitted_densities/examples_posterior_density_logits.npy", Float16.(log.(pmat_examples)))
 

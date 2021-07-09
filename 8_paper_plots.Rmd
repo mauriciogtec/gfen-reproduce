@@ -12,6 +12,8 @@ library(cowplot)
 library(collections)
 library(ggmap)
 library(viridis)
+
+bayesian_from_example_only = TRUE
 ```
 
 Load data from selected sites:
@@ -139,6 +141,18 @@ q50df = q50df %>%
 ```
 
 ```{r}
+chaindf_p = melt(chain)
+names(chaindf_p) = c("site_num", "time_num", "sim_num", "x_num", "prob")
+chaindf_p = chaindf_p %>% 
+  mutate(
+    evalpt = evalpts[x_num],
+    time=ordered(timelabels[time_num], levels=timelabels)
+  )%>% 
+  left_join(sites, by="site_num")
+```
+
+
+```{r}
 bmap_means = melt(bmap)
 names(bmap_means) = c("site_num", "time_num", "x_num", "prob")
 bmap_means = bmap_means %>% 
@@ -176,9 +190,9 @@ countlabs = vertexinfo %>%
 Global mean
 
 ```{r}
-global_dens = chaindf %>%
+global_dens = bmapdf %>%
   group_by(evalpt) %>%
-  summarize(prob=exp(mean(log(prob))), .groups="drop")
+  summarize(prob=exp(mean(log(prob))) / sum(exp(mean(log(prob)))), .groups="drop") 
 ```
 
 
@@ -186,6 +200,7 @@ global_dens = chaindf %>%
 
 ```{r, fig.width=6, fig.height=3.5}
 src = bmapdf
+times = c(1, 37)
 # src = q50df
 src = src %>%
   left_join(
@@ -196,11 +211,11 @@ src = src %>%
     select(q05df, site_num, time_num, x_num, prob_q05),
     by=c("site_num", "time_num", "x_num")
   ) %>%
-  filter(site_num %in% c(1, 5, 3, 4, 6), time_num %in% c(1, 35))
+  filter(site_num %in% c(1, 5, 3, 4, 6), time_num %in% times)
 
 
 means = bmap_means %>%
-  filter(site_num %in% c(1, 5, 3, 4, 6), time_num %in% c(1, 35)) %>%
+  filter(site_num %in% c(1, 5, 3, 4, 6), time_num %in% times) %>%
   mutate(lty="distribution mean")
 
 p = ggplot(src) +
@@ -212,7 +227,7 @@ p = ggplot(src) +
   geom_vline(aes(xintercept=m, linetype=lty), data=means, col="red") +
   geom_text(
     aes(x=x, y=y, label=lab, color=iszero),
-    data=filter(countlabs, site_num  %in% c(1, 5, 3, 4, 6), time_num %in% c(1, 35)),
+    data=filter(countlabs, site_num  %in% c(1, 5, 3, 4, 6), time_num %in% times),
     size=3,
     show.legend=FALSE
   ) +
@@ -224,7 +239,7 @@ p = ggplot(src) +
   labs(x="Productivity ($/hour)", y="Density", linetype="") +
   guides(fill=FALSE, linetype=FALSE) +
   scale_fill_brewer(palette="Set3") +
-  xlim(0, 100)
+  xlim(0, 125)
 ggsave("figures/examples_with_posterior.pdf", p, width=9, height=3.5, unit="in", dpi=100)
 p
 ```
@@ -234,22 +249,18 @@ Estimate probability quotes from paper.
 Probability of less than 20 dollars.
 
 ```{r}
-chaindf %>% 
-  filter(site_num %in% c(1, 5, 3, 4, 6), time_num %in% c(1, 35))  %>% 
+chaindf_p %>% 
+  filter(site_num %in% c(1, 5, 3, 4, 6), time_num %in% times)  %>% 
   filter(evalpt < 20) %>% 
   group_by(site_num, time_num, sim_num) %>% 
   summarize(prob=sum(prob)) %>% 
   ungroup() %>% 
   group_by(site_num, time_num) %>% 
-  summarize(q05=quantile(prob, 0.05), q95=quantile(prob, 0.95))
-```
-```{r}
-src %>% 
-  ungroup() %>% 
-  filter(evalpt < 20) %>% 
-  group_by(site_num, time_num) %>% 
-  summarize(prob=sum(prob))
-  
+  summarize(
+    q05=quantile(prob, 0.05),
+    q50=quantile(prob, 0.50),
+    q95=quantile(prob, 0.95)
+  )
 ```
 
 
@@ -302,7 +313,8 @@ p = ggplot(src) +
   theme(
     axis.text = element_text(size=8),
     strip.text = element_text(size=10),
-    axis.title = element_text(size=10)
+    axis.title = element_text(size=10),
+    axis.text.x = element_blank()
   )
 ggsave("figures/airport_cycle.pdf", dpi=100, p, width=8, height=7, unit="in")
 p
@@ -354,7 +366,8 @@ p = ggplot(src) +
     axis.text = element_text(size=8),
     strip.text = element_text(size=8),
     axis.title = element_text(size=10),
-    strip.text.y = element_text(angle=0)
+    strip.text.y = element_text(angle=0),
+    axis.text.y = element_blank()
   )
 ggsave("figures/sites_cycle.pdf", dpi=100, p, width=6, height=7, unit="in")
 p
@@ -375,7 +388,7 @@ ggmap(austinmap)
 
 ```{r}
 tplevels = c(18, 21, 32, 34)
-times = c(1, 35)
+times = c(1, 37)
 
 for (tplevel in tplevels) {
   tpmap = np$load(sprintf("./fitted_densities/map_tq%s.npy", tplevel)) %>% 
@@ -383,10 +396,11 @@ for (tplevel in tplevels) {
     `names<-`(c("site_num", "time_num", "value")) %>%
     mutate(time=ordered(timelabels[time_num], levels=timelabels)) %>% 
     bind_cols(vertexinfo_full) %>%
-    filter(time_num %in% times)
+    filter(time_num %in% times) %>% 
+    mutate(value = round(value, 2))
 
-  min_val = round(min(tpmap$value), 2) - 0.01
-  max_val = round(max(tpmap$value), 2) + 0.01
+  min_val = round(min(tpmap$value), 3) - 0.001
+  max_val = round(max(tpmap$value), 3) + 0.001
   
   for (t in times) {
     tpmap_sub = tpmap %>%
@@ -416,7 +430,7 @@ for (tplevel in tplevels) {
         plot.margin=grid::unit(c(0,0,0,0), "mm")
       ) +
       guides(fill = guide_legend(override.aes = list(alpha = 0.7))) +
-      scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10) +
+      scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10, option="E") +
       labs(fill="Probability")
     
     fname = sprintf("figures/tp%s_map%02d.pdf", tplevel, t)
@@ -445,9 +459,27 @@ iqr21 = (upper - bottom) %>%
   filter(time_num %in% times)
 ```
 
+Variability in data
+```{r}
+tmp = melt(tpmap)
+names(tmp) = c("site_num", "time_num", "sim", "value")
+tmp %>% 
+  group_by(sim) %>% 
+  summarize(maxp=max(value), minp=min(value), .groups="drop") %>% 
+  summarize(
+    max=mean(maxp),
+    maxq95=quantile(maxp, 0.95),
+    maxq05=quantile(maxp, 0.05),
+    min=mean(minp),
+    minq95=quantile(minp, 0.95),
+    minq05=quantile(minp, 0.05),
+  )
+  
+```
+
 ```{r}
 min_val = round(min(iqr21$value), 4) - 0.0001
-max_val = 0.0701 # round(max(iqr21$value), 3) + 0.001
+max_val = round(max(iqr21$value), 3) + 0.001
 
 for (t in times) {
   iqr_sub = iqr21 %>%
@@ -478,7 +510,7 @@ for (t in times) {
       plot.margin=grid::unit(c(0,0,0,0), "mm")
     ) +
     guides(fill = guide_legend(override.aes = list(alpha = 0.7))) +
-    scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10) +
+    scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10, option="E") +
     labs(fill="\nTail proba.\nposterior\nuncertainty\n\n[5%,95%]")
   
   fname = sprintf("figures/tp21_uncertainty%02d.pdf", t)
@@ -494,7 +526,7 @@ last_plot()
 
 ```{r}
 plevels = c(10, 25, 50, 75)
-times = c(1, 35)
+times = c(1, 37)
 
 for (plevel in plevels) {
   qmap = np$load(sprintf("./fitted_densities/map_q%s.npy", plevel)) %>% 
@@ -535,7 +567,7 @@ for (plevel in plevels) {
         plot.margin=grid::unit(c(0,0,0,0), "mm")
       ) +
       guides(fill = guide_legend(override.aes = list(alpha = 0.7))) +
-      scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10) +
+      scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10, option="E") +
       labs(fill="Productivity")
     
     fname = sprintf("figures/q%s_map%02d.pdf", plevel, t)
@@ -595,7 +627,7 @@ for (t in times) {
       plot.margin=grid::unit(c(0,0,0,0), "mm")
     ) +
     guides(fill = guide_legend(override.aes = list(alpha = 0.7))) +
-    scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10) +
+    scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10, option="E") +
     labs(fill="Productivity\nposterior\nuncertainty\n[5%,95%]")
   
   fname = sprintf("figures/quantile_uncertainty%02d.pdf", t)
@@ -654,10 +686,114 @@ mapiqr = mapiqr %>%
         plot.margin=grid::unit(c(0,0,0,0), "mm")
       ) +
       guides(fill = guide_legend(override.aes = list(alpha = 0.7))) +
-      scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10) +
+      scale_fill_viridis(limits=c(min_val, max_val), n.breaks=10,  option="E") +
       labs(fill="Range ($/hour)\n75%-25%")
     
     fname = sprintf("figures/mapiqr_%02d.pdf", t)
     ggsave(fname, g, height=4, width=5, units="in")
   }
 ```
+
+## Modelfit metrics
+
+```{r, fig.width=8, fig.height=3}
+plots = list()
+for (split in 0:35) {
+  metrics = read_csv(sprintf("./modelfit_metrics/cvloss_%02d.csv", split))
+  names(metrics)[5:8] = c("lam_s1", "lam_s2", "lam_t1", "lam_t2")
+  vars = c("gen", "lam_s1", "lam_s2", "lam_t1", "lam_t2", "cv_logll")
+  
+  metrics = metrics %>% 
+    mutate(runid=1:n()) %>%
+    filter(gen %% 2 == 0) %>%
+    mutate(
+      lam_s1=log10(lam_s1),
+      lam_s2=log10(lam_s2),
+      lam_t1=log10(lam_t1),
+      lam_t2=log10(lam_t2)
+    ) %>%
+    select(runid, vars) %>% 
+    pivot_longer(vars)
+  
+  cv_logll_value = metrics %>% 
+    filter(name == "cv_logll") %>% 
+    rename(cv_logll=value) %>%
+    mutate(cvq05=quantile(cv_logll, 0.05)) %>% 
+    mutate(cv_logll_norm=pmax(cv_logll - cvq05, 0) + cvq05) %>% 
+    group_by(name) %>% 
+    mutate(cv_logll=cv_logll/max(cv_logll)) %>% 
+    ungroup() %>% 
+    select(-name)
+  
+  metrics = left_join(metrics, cv_logll_value, by = c("runid"))
+  
+  metrics_range = metrics %>% 
+    group_by(name) %>% 
+    summarize(min_val=min(value), max_val=max(value), .groups="drop")
+  
+  metrics = metrics %>% 
+    left_join(metrics_range, by="name") %>% 
+    mutate(
+      value_norm = case_when(
+        name %in% c("gen", "cv_logll") ~ (value - min_val) / (max_val - min_val),
+        name %in% c("l1m_s1", "lam_t1") ~ (value + 2.03) / 2.78,
+        name %in% c("l1m_s2", "lam_t2") ~ (value + 4.03) / 4.78
+      )
+      # value_norm = case_when(
+      #   name %in% c("gen", "cv_logll") ~ (value - min_val) / (max_val - min_val),
+      #   name %in% c("l1m_s1", "lam_t1") ~ value / 10^(0.78),
+      #   name %in% c("l1m_s2", "lam_t2") ~ value / 10^(0.78)
+      # )
+    ) %>% 
+    # filter(name != "cv_logll") %>%)
+    mutate(name = ordered(name, levels=c("gen", "lam_s1", "lam_s2", "lam_t1", "lam_t2", "cv_logll")))
+  
+  ggplot(metrics) +
+    aes(x=as.integer(name), y=value_norm, group=runid, color=cv_logll_norm) +
+    geom_line(aes(size=cv_logll_norm)) +
+    theme_minimal_vgrid() +
+    guides(alpha=FALSE, color=FALSE, size=FALSE) + 
+    scale_color_viridis(alpha=0.7, begin=0, option="E") +
+    scale_x_continuous(
+      labels=c(
+        "generation",
+        "lambda s1",
+        "lambda s2",
+        "lambda t1",
+        "lambda t2",
+        "cv logll"
+      ),
+      breaks=1:6
+    ) +
+    scale_size_continuous(range=c(0.125, 0.65)) +
+    theme(
+      axis.text.x = element_text(angle=0, color="#222222", size=10),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line.y = element_blank(),
+      legend.text = element_text(color="#222222", size=8),
+      legend.title = element_text(color="#222222", size=10),
+    ) +
+    labs(color="cross. val.\nloglikehood")
+  ggsave(
+    sprintf("figures/parallel_plots/split_%02d.pdf", split),
+    width=6,
+    height=2.0,
+    units="in"
+  )
+}
+```
+
+```{r}
+splits = read_csv("processed_data/splits_qua.csv")
+splits$n = 0
+splits$split = 0:35
+for (j in 1:36) {
+  x = read_csv(sprintf("productivity_splits/%02d.csv", j - 1), col_names=FALSE)
+  splits$n[j] = sum(x[ ,2])
+}
+splits
+```
+
