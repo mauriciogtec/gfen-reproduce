@@ -1,0 +1,13 @@
+experiment,task_space,task_time,method,cv_nloglikelihood,val_nloglikelihood,outliers,nsim,runid,pmiss
+1,constant,constant,fl,0.7058320680621565,0.710802300686314,false,1,3,0.1
+2,constant,constant,fl,0.7999264450746462,0.9967161579443261,false,2,3,0.1
+3,constant,constant,fl,0.62474205928315,0.7451245437367503,false,3,3,0.1
+4,constant,constant,fl,0.8631780652263364,0.8205803805081856,false,4,3,0.1
+1,constant,constant,kal,0.6770372448070371,0.8354246435173843,false,1,3,0.1
+2,constant,constant,kal,0.771648440221709,0.9799898233556883,false,2,3,0.1
+3,constant,constant,kal,0.7357030011466236,0.7717566585634716,false,3,3,0.1
+4,constant,constant,kal,0.6644116932987172,1.0445619337482124,false,4,3,0.1
+1,constant,constant,enet,0.5874025088483801,0.7125029330340931,false,1,3,0.1
+2,constant,constant,enet,0.7237090199245291,0.8224416176082052,false,2,3,0.1
+3,constant,constant,enet,0.6278392441549595,0.8066434512923071,false,3,3,0.1
+4,constant,constant,enet,0.7957885509993394,0.916434653118258,false,4,3,0.1

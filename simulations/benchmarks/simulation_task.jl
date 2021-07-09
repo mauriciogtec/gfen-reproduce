@@ -17,7 +17,7 @@ Random.seed!(138590)
 
 println("Running with $(Threads.nthreads())")
 
-debug = false
+debug = true
 if debug
     runid = 0
 else
@@ -199,7 +199,7 @@ function cv_fit2(y, evalpts, ptr, brks, istemporal, lambdas, cvsets, models)
     test_nloglikelihood = zeros(nlambdas, nsplits)
                     
     # prepare the tree structure and the bint 
-    @threads for k in 1:nlambdas
+    for k in 1:nlambdas
         λ1, λ2, η1, η2 = lambdas[k]
         for i in 1:nsplits
             # get the cv vector with missing data
@@ -355,9 +355,9 @@ tosave = Dict(
 
 ##
 # %%
-N = 1
+N = 30
 pmiss = 0.8
-nsims = 2
+nsims = 1
 tasks = ("smooth", "constant", "mixed")
 
 experiment_results = run_benchmarks(N, pmiss, nsims=nsims, tasks=tasks)

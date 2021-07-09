@@ -212,6 +212,10 @@ plot(Gray.(1 .- unc))
 xlabel!("time")
 ylabel!("space")
 
+## posterior covariance  How to order points?
+
+## posterior inverse covariance
+
 ##
 savefig("simulations/geometries/geometries_iqr.pdf")
 ##

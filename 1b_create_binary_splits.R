@@ -8,7 +8,7 @@ library(collections)
 
 set.seed(123120)
 
-# df = read_csv("./processed_data/rideaustin_productivity.csv")
+df = read_csv("./processed_data/rideaustin_productivity.csv")
 # hist(df$productivity)
 
 
@@ -80,9 +80,9 @@ lows = c()
 ups = c()
 
 count = 0
-set = dict()
-for (i in 1:nrow(parts))
-  set$set(as.integer(parts[i, 1:2]), 0)
+# set = dict()
+# for (i in 1:nrow(parts))
+#   set$set(as.integer(parts[i, 1:2]), 0)
 
 for (i in 1:nrow(parts)) {
   low = parts[i, 1] + 1
@@ -114,7 +114,7 @@ mids = c()
 ups = c()
 lvls = c()
 min_val = min_X
-max_val = 100
+max_val = max(X)
 tmp = c(min_val, splits_qua, max_val)
 c = 1
 for (lev in 1:5) {
@@ -136,6 +136,7 @@ for (k in 1:length(new_left)) {
   lows[c] = min_val
   mids[c] = tmp[length(tmp) - k]
   ups[c] = tmp[length(tmp) - k + 1]
+  print(paste("Adding split with midpoint",  mids[c]))
   lvls[c] = 4 + k
   c = c + 1
 }
@@ -144,8 +145,9 @@ tmp = c(max(splits_qua), new_right)
 for (k in 1:length(new_right)) {
   lows[c] = tmp[k]
   mids[c] = tmp[k + 1]
-  ups[c] = max_val
+  ups[c] = max(X)
   lvls[c] = 4 + k
+  print(paste("Adding split: ", lows[c], mids[c], ups[c], sep=","))
   c = c + 1
 }
 
@@ -166,10 +168,10 @@ sprintf("Using %s splits", nrow(splits_opt))
 splits_df = tibble(
   val=c(splits_qua, splits_qua_extra, splits_opt$mid, splits_uni),
   type=c(
-    rep("(C) Quantiles (31 splits)", 31),
-    rep("(D) Quantiles Extended (36 splits)", 36),
-    rep(sprintf("(B) OptionalPolyaTree(6, 0.1) (%s splits)",  nrow(splits_opt)), nrow(splits_opt)),
-    rep("(A) Uniform (31 splits)", 31)
+    rep("(B) Quantiles (depth=5)", 31),
+    rep("(C) Extended Quantiles (depth=5 + 5 tail splits)", 36),
+    rep("(D) HMAP-OPT(depth=6, p=0.1)", 36),
+    rep("(A) Uniform (depth=5)", 31)
   )
 )
 # 
@@ -181,21 +183,22 @@ porig = ggplot() +
     data=df
   ) +
   geom_vline(aes(xintercept=val, color=type), data=splits_df) +
-  facet_wrap(~ type, ncol=1) +
+  facet_wrap(~ type, ncol=2) +
   theme_minimal_hgrid() +
   # labs(
     # title="original scale productivity",
     # subtitle="Optional polya tree splits from original scale"
   # ) +
   # scale_y_log10() +
-  labs(y="count", x="productivity ($/h)") +
+  labs(y="Count", x="Productivity (all vertices)") +
   guides(color=FALSE) +
   scale_color_brewer(palette="Set2") +
   theme(
-    axis.text.x = element_text(size=10),
-    axis.text.y = element_text(size=10),
+    axis.text.x = element_text(size=8),
+    axis.text.y = element_text(size=8),
     axis.title.y = element_blank(),
-    axis.title.x = element_text(size=10)
+    axis.title.x = element_text(size=8),
+    strip.text = element_text(size=8)
   ) + 
   xlim(0, 122)
 porig
@@ -203,10 +206,10 @@ porig
 # 
 # 
 ggsave(
-  "processed_data/splits_original_scale.pdf",
+  "figures/splits_original_scale.pdf",
   porig,
-  width=12,
-  height=12,
+  width=16,
+  height=6,
   units="cm"
 )
 # 
@@ -231,15 +234,16 @@ plog = ggplot() +
   guides(color=FALSE) +
   scale_color_brewer(palette="Set2") +
   theme(
-    axis.text.x = element_text(size=10),
-    axis.text.y = element_text(size=10),
+    axis.text.x = element_text(size=8),
+    axis.text.y = element_text(size=8),
     axis.title.y = element_blank(),
-    axis.title.x = element_text(size=10)
+    axis.title.x = element_text(size=8),
+    strip.text = element_text(size=10)
   )
 plog
 
 ggsave(
-  "processed_data/splits_log_scale.pdf",
+  "figures/splits_log_scale.pdf",
   plog,
   width=12,
   height=12,
