@@ -12,7 +12,7 @@
 - pandas (0.25.1)
 - numpy 1.16.5
 
-**Julia (1.1.0)**
+**Julia (1.5.0)**
 
 In most cases, it should not be necessary to manually install packages since the Julia scripts provided use a local Julia project file that will automatically install the necessary versions. 
 

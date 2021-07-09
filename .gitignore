@@ -1,2 +1,5 @@
 **/.vscode
 **/*.init
+.Rproj.user
+**/*.out
+best_betas_bayesian/*

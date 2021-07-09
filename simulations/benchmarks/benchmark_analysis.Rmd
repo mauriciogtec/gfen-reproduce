@@ -1,0 +1,144 @@
+---
+title: "Analysis of benchmark reuslts"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(reshape2)
+library(reticulate)
+library(cowplot)
+```
+
+```{r, fig.width=9, fig.height=7}
+np=reticulate::import("numpy")
+dat = np$load("example_task.npz")
+vals = melt(dat[["devals"]])
+names(vals) = c("time", "space", "x_num", "d")
+
+fit = melt(dat[["fitdens"]])
+names(fit) = c("time", "space", "x_num", "d")
+
+evalpts = dat[["evalpts"]]
+splitvals = dat[["splitvals"]]
+
+ndata = dat[["ndata"]]
+ndata = melt(ndata)
+names(ndata) = c("time", "space", "n")
+
+
+neval = length(evalpts)
+nsplits = length(splitvals)
+
+xval = tibble(
+    x_num=1:neval,
+    x=evalpts
+)
+
+fval = tibble(
+    x_num=1:nsplits,
+    x=splitvals
+)
+
+vals = vals %>% 
+  left_join(xval, by="x_num") %>% 
+  filter(
+    (space == 1) | (space %% 3 == 0),
+    (time == 1) | (time %% 3 == 0)
+  ) %>% 
+  mutate(type="ground truth")
+
+fit = fit %>% 
+  left_join(fval, by="x_num") %>% 
+  filter(
+    (space == 1) | (space %% 3 == 0),
+    (time == 1) | (time %% 3 == 0)
+  ) %>% 
+  mutate(type="fitted density")
+
+plotdata = bind_rows(vals, fit)
+
+ndata = ndata %>% 
+  mutate(lab=paste0(n)) %>% 
+  mutate(x=2.0, y=0.8 * max(max(vals$d), max(fit$d))) %>% 
+  mutate(iszero=factor(n == 0)) %>% 
+  filter(
+    (space == 1) | (space %% 3 == 0),
+    (time == 1) | (time %% 3 == 0)
+  )
+
+# write_csv(vals, "simulations/benchmarks/vals.csv")
+g = ggplot(plotdata) +
+  geom_line(aes(x=x, y=d, linetype=type)) +
+  geom_text(aes(x=x, y=y, label=lab, color=iszero), size=3, data=ndata) +
+  facet_grid(space ~ time) + 
+  theme_bw() + 
+  labs(y="space", x="time", linetype="") +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "top",
+    axis.text = element_blank(),
+    axis.title = element_text(size=10),
+    legend.text = element_text(size=12),
+    # strip.background = element_blank(),
+    strip.text = element_text(size=8),
+    axis.ticks = element_blank()
+  ) + 
+  scale_color_manual(values=c("#222222", "red")) +
+  guides(color=FALSE)
+ggsave("example_spt_task.pdf", width = 9, height=7, units="in")
+```
+
+
+
+```{r}
+df = read_csv("./benchmarks-results-spt_p01_v2.csv") %>% 
+  mutate(task_space = paste0(task_space, ifelse(outliers, "+outliers", ""))) %>% 
+  mutate(task_time = paste0(task_time, ifelse(outliers, "+outliers", ""))) %>% 
+  mutate(task_space = ordered(task_space, levels=c("constant", "smooth", "mixed", "mixed+outliers"))) %>% 
+  mutate(task_time = ordered(task_time, levels=c("constant", "smooth", "mixed", "mixed+outliers"))) %>% 
+  mutate(method = ordered(method, levels=c("fl", "enet", "kal")))
+```
+
+```{r}
+df %>% 
+  group_by(task_space, task_time, method) %>%
+  summarize(cv_ll = round(mean(cv_ll), 3), val_ll = round(mean(val_ll), 3)) %>% 
+  # filter(task_space != "mixed" & task_time != "mixed") %>% 
+  View
+```
+
+
+
+<!-- ```{r} -->
+<!-- dat = read_csv("benchmarks-results-3.csv") %>%  -->
+<!--   mutate(neg_ll = -log(likelihood))  -->
+<!-- ``` -->
+
+
+<!-- Summaries using values -->
+
+<!-- ```{r} -->
+<!-- dat %>%  -->
+<!--   group_by(task, method) %>%  -->
+<!--   summarize(neg_ll_mean = mean(neg_ll), -->
+<!--             rmise_mean = mean(rmise), -->
+<!--             miae_mean = mean(miae)) -->
+<!-- ``` -->
+
+<!-- Summaries using ranks -->
+
+<!-- ```{r} -->
+<!-- dat %>%  -->
+<!--   group_by(task, experiment) %>%  -->
+<!--   mutate(rank_neg_ll = rank(neg_ll), -->
+<!--          rank_rmise = rank(rmise), -->
+<!--          rank_miae = rank(miae)) %>%  -->
+<!--   ungroup() %>%  -->
+<!--   group_by(task, method) %>%  -->
+<!--   summarize(rank_neg_ll_mean = mean(rank_neg_ll), -->
+<!--             rank_rmise_mean = mean(rank_rmise), -->
+<!--             rank_miae_mean = mean(rank_miae)) -->
+<!-- ``` -->
+

@@ -1,0 +1,24 @@
+grid:
+  size: [256, 192]
+
+bg:
+  prob: [0.049999, 0.05]
+  obs: 1
+
+signal:
+  triangle:
+    n: 16
+    width: [32, 72]
+    height: [24, 48]
+  prob: [0.5, 0.9]
+  obs: 1
+
+miss:
+  ellipse:
+    n: 24
+    angle: [0.0, 1.0]
+    width: [4, 24]
+    height: [4, 16]
+  prob: [0.5, 1.0]
+
+seed: 123912
