@@ -14,18 +14,4 @@
 
 **Julia (1.5.0)**
 
-In most cases, it should not be necessary to manually install packages since the Julia scripts provided use a local Julia project file that will automatically install the necessary versions. 
-
-- CSV (0.5.17)
-- LightGraphs (1.3.0)
-- Distributions (0.21.8)
-- ClusterManagers (0.3.2)
-- Formatting (0.4.1)
-- JSON (0.21.0)
-- FileIO (1.0.7)
-- DataStructures (0.17.5)
-- Distances (0.8.2)
-- Plots (0.27.0)
-- RCall (0.13.4)
-- DataFrames (0.19.4)
-- StatsBase (0.32.0)
+In most cases, it should not be necessary to manually install packages since the Julia scripts provided use a local Julia project file that will automatically install the necessary versions using `Pkg.instantiate()`.
