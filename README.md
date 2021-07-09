@@ -2,7 +2,7 @@
 
 This repository contains all the code to necessary to reproduce our results. Here's a brief description of the contents of the repository. See the file `MANIFEST.md` for a description of software versions used.
 
-For completeness, all the scripts for preprocessing the raw RideAustind ata are included. To run those, it is necessary to have `R` and `python 3`. For convenience, the post-processed data are also included, so pre-processing steps can be skipped and start at step 2 below.
+For completeness, all the scripts for preprocessing the raw RideAustin data are included. To run those, it is necessary to have `R` and `python 3`. For convenience, the post-processed data are also included, so pre-processing steps can be skipped and start at step 2 below.
 
 The main algorithms are implemented using the high-performance computing software `Julia (v1.5)` with an open-source package we developed for this paper called `GraphFusedElasticNet.jl`. Below we provide further instructions.
 
