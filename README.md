@@ -1,4 +1,4 @@
-# Large-Scale Spatiotemporal Density Smoothing with the Graph-fused Elastic Net
+# How Likely are Ride-share Drivers to Earn a Living Wage? Large-scale Spatio-temporal Density Smoothing with the Graph-fused Elastic Net
 
 This repository contains all the code to necessary to reproduce our results. Here's a brief description of the contents of the repository. See the file `MANIFEST.md` for a description of software versions used.
 
