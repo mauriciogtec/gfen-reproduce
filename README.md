@@ -93,9 +93,4 @@ Please email Mauricio Tec at `mauriciogtec@utexas.edu` for any remaining questio
 Bon voyage!
 
 
-
-
-
-
-
 ![smoothing-animation](./map_animation.gif)
